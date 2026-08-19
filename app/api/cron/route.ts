@@ -40,7 +40,7 @@ export async function GET() {
     // 3. Envoyer la notification via Ntfy
     let ntfyStatus = "Aucune alerte à envoyer"
     if (alerts.length > 0) {
-      const topic = "frosti_alertes_famille_8472" // Vérifiez que c'est bien votre topic
+      const topic = "frosti_alertes_famille_2278" // Vérifiez que c'est bien votre topic
       const nomsProduits = alerts.map(a => a.produit).join(', ')
       const message = `${alerts.length} produit(s) à consommer rapidement : ${nomsProduits}`
 

@@ -52,9 +52,16 @@ function getCookie(name: string) {
     loadData()
   }, [])
 
-  async function loadData() {
-    const userId = getCookie('congelo_user_id')
-    
+async function loadData() {
+    // On récupère directement tous les cookies du navigateur pour trouver le bon
+    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+      const [key, value] = cookie.trim().split('=');
+      acc[key] = value;
+      return acc;
+    }, {} as Record<string, string>);
+
+    const userId = cookies['congelo_user_id'];
+
     let fQuery = supabase.from('freezers').select('*').order('created_at', { ascending: true })
     if (userId) fQuery = fQuery.eq('user_id', userId)
     const { data: fData } = await fQuery
@@ -65,7 +72,6 @@ function getCookie(name: string) {
     const { data: iData } = await query
     if (iData) setItems(iData)
 
-    // Récupérer le canal Ntfy de l'utilisateur s'il existe déjà
     if (userId) {
       const { data: sData } = await supabase.from('user_settings').select('ntfy_topic').eq('user_id', userId).single()
       if (sData && sData.ntfy_topic) {
@@ -74,20 +80,19 @@ function getCookie(name: string) {
     }
   }
 
-  const handleAlertDaysChange = (days: number) => {
-    setAlertDays(days)
-    localStorage.setItem('frosti_alert_days', days.toString())
-  }
+  async function saveNtfyTopic() {
+    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+      const [key, value] = cookie.trim().split('=');
+      acc[key] = value;
+      return acc;
+    }, {} as Record<string, string>);
 
+    const userId = cookies['congelo_user_id'];
 
-
-async function saveNtfyTopic() {
-    const userId = getCookie('congelo_user_id')
-    
-    // On affiche une alerte avec ce qu'il a trouvé (ou "vide")
-    alert("ID trouvé : " + (userId || "AUCUN !"))
-    
-    if (!userId) return
+    if (!userId) {
+      alert("Utilisateur non identifié. Veuillez vous reconnecter.")
+      return
+    }
 
     const { error } = await supabase
       .from('user_settings')
@@ -96,10 +101,15 @@ async function saveNtfyTopic() {
     if (!error) {
       alert("Canal Ntfy enregistré avec succès !")
     } else {
-      alert("Erreur Supabase : " + error.message)
+      console.error("Erreur Supabase:", error)
+      alert("Erreur : " + error.message)
     }
   }
 
+  const handleAlertDaysChange = (days: number) => {
+    setAlertDays(days)
+    localStorage.setItem('frosti_alert_days', days.toString())
+  }
 
 
 

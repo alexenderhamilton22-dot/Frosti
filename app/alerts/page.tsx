@@ -36,9 +36,14 @@ export default function AlertsPage() {
   const supabase = createClient()
 
   // Fonction de lecture de cookie ultra-fiable
-  function getCookie(name: string) {
-    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
-    return match ? match[2] : null
+function getCookie(name: string) {
+    // 1. Cherche dans les cookies
+    const value = `; ${document.cookie}`
+    const parts = value.split(`; ${name}=`)
+    if (parts.length === 2) return parts.pop()?.split(';').shift()
+    
+    // 2. Par sécurité, cherche aussi dans le localStorage si l'app l'y stocke
+    return localStorage.getItem(name)
   }
 
   useEffect(() => {
@@ -74,12 +79,17 @@ export default function AlertsPage() {
     localStorage.setItem('frosti_alert_days', days.toString())
   }
 
-  async function saveNtfyTopic() {
+
+
+
+
+async function saveNtfyTopic() {
     const userId = getCookie('congelo_user_id')
-    if (!userId) {
-      alert("Utilisateur non identifié. Veuillez vous reconnecter.")
-      return
-    }
+    
+    // On affiche une alerte avec ce qu'il a trouvé (ou "vide")
+    alert("ID trouvé : " + (userId || "AUCUN !"))
+    
+    if (!userId) return
 
     const { error } = await supabase
       .from('user_settings')
@@ -88,10 +98,14 @@ export default function AlertsPage() {
     if (!error) {
       alert("Canal Ntfy enregistré avec succès !")
     } else {
-      console.error("Erreur Supabase:", error)
-      alert("Erreur : " + error.message)
+      alert("Erreur Supabase : " + error.message)
     }
   }
+
+
+
+
+
 
   async function updateQty(id: string, delta: number) {
     const item = items.find(i => String(i.id) === String(id))

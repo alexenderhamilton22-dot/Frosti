@@ -35,10 +35,10 @@ export default function AlertsPage() {
   const [ntfyInput, setNtfyInput] = useState('')
   const supabase = createClient()
 
+  // Fonction de lecture de cookie ultra-fiable
   function getCookie(name: string) {
-    const value = `; ${document.cookie}`
-    const parts = value.split(`; ${name}=`)
-    if (parts.length === 2) return parts.pop()?.split(';').shift()
+    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'))
+    return match ? match[2] : null
   }
 
   useEffect(() => {
@@ -49,6 +49,7 @@ export default function AlertsPage() {
 
   async function loadData() {
     const userId = getCookie('congelo_user_id')
+    
     let fQuery = supabase.from('freezers').select('*').order('created_at', { ascending: true })
     if (userId) fQuery = fQuery.eq('user_id', userId)
     const { data: fData } = await fQuery
@@ -58,6 +59,14 @@ export default function AlertsPage() {
     if (userId) query = query.eq('user_id', userId)
     const { data: iData } = await query
     if (iData) setItems(iData)
+
+    // Récupérer le canal Ntfy de l'utilisateur s'il existe déjà
+    if (userId) {
+      const { data: sData } = await supabase.from('user_settings').select('ntfy_topic').eq('user_id', userId).single()
+      if (sData && sData.ntfy_topic) {
+        setNtfyInput(sData.ntfy_topic)
+      }
+    }
   }
 
   const handleAlertDaysChange = (days: number) => {
@@ -65,8 +74,7 @@ export default function AlertsPage() {
     localStorage.setItem('frosti_alert_days', days.toString())
   }
 
-
-async function saveNtfyTopic() {
+  async function saveNtfyTopic() {
     const userId = getCookie('congelo_user_id')
     if (!userId) {
       alert("Utilisateur non identifié. Veuillez vous reconnecter.")
@@ -80,13 +88,10 @@ async function saveNtfyTopic() {
     if (!error) {
       alert("Canal Ntfy enregistré avec succès !")
     } else {
-      // On affiche la vraie erreur technique de Supabase
       console.error("Erreur Supabase:", error)
       alert("Erreur : " + error.message)
     }
   }
-
-
 
   async function updateQty(id: string, delta: number) {
     const item = items.find(i => String(i.id) === String(id))
@@ -105,7 +110,6 @@ async function saveNtfyTopic() {
 
   const today = new Date().toISOString().slice(0, 10)
   
-  // DÉFINITION DES VARIABLES QUI MANQUAIENT :
   const freezers = equipments.filter(e => !e.is_fridge)
   const fridges = equipments.filter(e => e.is_fridge)
 

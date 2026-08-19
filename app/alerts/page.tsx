@@ -81,8 +81,6 @@ function getCookie(name: string) {
 
 
 
-
-
 async function saveNtfyTopic() {
     const userId = getCookie('congelo_user_id')
     

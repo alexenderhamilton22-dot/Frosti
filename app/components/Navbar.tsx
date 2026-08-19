@@ -7,17 +7,17 @@ export default function Navbar() {
   const pathname = usePathname()
   const router = useRouter()
 
-  // Si on est sur la page de login, on n'affiche pas la barre de navigation
+  // Si on est sur la page de login, on n'affiche pas la barre
   if (pathname === '/login') return null
 
+  // On sépare le texte et l'icône pour pouvoir cacher le texte sur mobile
   const links = [
-    { href: '/', label: 'Congélateurs ❄️' },
-    { href: '/alerts', label: 'Alertes ⚠️' },
-    { href: '/search', label: 'Recherche 🔍' },
+    { href: '/', label: 'Congélateurs', icon: '❄️' },
+    { href: '/alerts', label: 'Alertes', icon: '⚠️' },
+    { href: '/search', label: 'Recherche', icon: '🔍' },
   ]
 
   const handleLogout = () => {
-    // Supprimer les cookies de session
     document.cookie = 'congelo_user_id=; path=/; max-age=0'
     document.cookie = 'congelo_username=; path=/; max-age=0'
     router.push('/login')
@@ -25,13 +25,15 @@ export default function Navbar() {
 
   return (
     <nav className="bg-white border-b border-gray-100 shadow-sm sticky top-0 z-50">
-      <div className="max-w-4xl mx-auto px-4 flex justify-between items-center h-16">
+      <div className="max-w-4xl mx-auto px-3 sm:px-4 flex justify-between items-center h-16">
+        
         {/* Logo et Nom Frosti */}
-        <Link href="/" className="flex items-center space-x-2">
-          <img src="/logo.png" alt="Frosti Logo" className="w-10 h-10 rounded-xl object-cover shadow-sm" />
+        <Link href="/" className="flex items-center space-x-2 shrink-0">
+          <img src="/logo.png" alt="Frosti Logo" className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl object-cover shadow-sm" />
           <div>
-            <span className="font-bold text-xl text-slate-800 tracking-tight">Frosti</span>
-            <span className="block text-[10px] text-slate-400 font-medium -mt-1">Ma gestion de congélos</span>
+            <span className="font-bold text-lg sm:text-xl text-slate-800 tracking-tight">Frosti</span>
+            {/* Le sous-titre disparait sur mobile (hidden sm:block) */}
+            <span className="hidden sm:block text-[10px] text-slate-400 font-medium -mt-1">Ma gestion de congélos</span>
           </div>
         </Link>
 
@@ -43,13 +45,14 @@ export default function Navbar() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`px-3 py-2 rounded-xl text-sm font-medium transition ${
-                  isActive 
-                    ? 'bg-sky-50 text-sky-600' 
-                    : 'text-slate-600 hover:bg-slate-50'
+                className={`flex items-center px-3 py-2 rounded-xl text-sm font-medium transition ${
+                  isActive ? 'bg-sky-50 text-sky-600' : 'text-slate-600 hover:bg-slate-50'
                 }`}
+                title={link.label}
               >
-                {link.label}
+                {/* Le texte est caché sur mobile (hidden sm:inline), seul l'emoji reste */}
+                <span className="hidden sm:inline mr-1.5">{link.label}</span>
+                <span className="text-base sm:text-sm">{link.icon}</span>
               </Link>
             )
           })}
@@ -57,11 +60,13 @@ export default function Navbar() {
           <button
             onClick={handleLogout}
             title="Se déconnecter"
-            className="ml-2 px-3 py-2 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition"
+            className="flex items-center ml-1 sm:ml-2 px-3 py-2 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition"
           >
-            Déconnexion 🚪
+            <span className="hidden sm:inline mr-1.5">Déconnexion</span>
+            <span className="text-base sm:text-sm">🚪</span>
           </button>
         </div>
+        
       </div>
     </nav>
   )

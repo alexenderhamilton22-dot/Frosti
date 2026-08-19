@@ -1,13 +1,12 @@
-import type { Metadata } from "next";
-import "./globals.css";
-import Navbar from "./components/Navbar";
-
-
 import type { Metadata, Viewport } from "next";
+import { Inter } from "next/font/google";
+import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Frosti",
-  description: "La gestion de mes congélos et frigos",
+  description: "Ma gestion de congélos et frigos",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -17,10 +16,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0ea5e9", // La couleur bleue de Frosti pour la barre du haut sur téléphone
+  themeColor: "#0ea5e9",
 };
-
-
 
 export default function RootLayout({
   children,
@@ -29,12 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr">
-      <body className="bg-slate-50 min-h-screen text-slate-800 antialiased">
-        <Navbar />
-        <main className="max-w-4xl mx-auto p-4 sm:p-6">
-          {children}
-        </main>
-      </body>
+      <body className={inter.className}>{children}</body>
     </html>
   );
 }

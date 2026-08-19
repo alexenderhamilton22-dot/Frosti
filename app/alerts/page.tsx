@@ -65,12 +65,28 @@ export default function AlertsPage() {
     localStorage.setItem('frosti_alert_days', days.toString())
   }
 
-  async function saveNtfyTopic() {
+
+async function saveNtfyTopic() {
     const userId = getCookie('congelo_user_id')
-    const { error } = await supabase.from('user_settings').upsert({ user_id: userId, ntfy_topic: ntfyInput })
-    if (!error) alert("Canal Ntfy enregistré !")
-    else alert("Erreur lors de l'enregistrement.")
+    if (!userId) {
+      alert("Utilisateur non identifié. Veuillez vous reconnecter.")
+      return
+    }
+
+    const { error } = await supabase
+      .from('user_settings')
+      .upsert({ user_id: userId, ntfy_topic: ntfyInput })
+
+    if (!error) {
+      alert("Canal Ntfy enregistré avec succès !")
+    } else {
+      // On affiche la vraie erreur technique de Supabase
+      console.error("Erreur Supabase:", error)
+      alert("Erreur : " + error.message)
+    }
   }
+
+
 
   async function updateQty(id: string, delta: number) {
     const item = items.find(i => String(i.id) === String(id))

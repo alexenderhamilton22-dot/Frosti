@@ -36,6 +36,7 @@ export default function AlertsPage() {
   const [rules, setRules] = useState<Record<string, AlertRule>>({})
   const [ntfyInput, setNtfyInput] = useState('')
   const [isSavingRules, setIsSavingRules] = useState(false)
+  const [notIdentified, setNotIdentified] = useState(false)
   
   const supabase = createClient()
 
@@ -51,15 +52,29 @@ export default function AlertsPage() {
   async function loadData() {
     const userId = getCookie('congelo_user_id')
 
+    // 🔒 Garde-fou : si on ne peut pas identifier l'utilisateur, on ne charge
+    // surtout pas de données non filtrées (qui remonteraient celles de TOUS
+    // les utilisateurs). On affiche un état "non identifié" à la place.
+    if (!userId) {
+      setNotIdentified(true)
+      setItems([])
+      setEquipments([])
+      setCategories([])
+      setRules({})
+      setNtfyInput('')
+      return
+    }
+    setNotIdentified(false)
+
     // 1. Charger les équipements
     let fQuery = supabase.from('freezers').select('*').order('created_at', { ascending: true })
-    if (userId) fQuery = fQuery.eq('user_id', userId)
+    fQuery = fQuery.eq('user_id', userId)
     const { data: fData } = await fQuery
     if (fData) setEquipments(fData)
 
     // 2. Charger les items
     let query = supabase.from('items').select('*').order('date_peremption', { ascending: true })
-    if (userId) query = query.eq('user_id', userId)
+    query = query.eq('user_id', userId)
     const { data: iData } = await query
     if (iData) setItems(iData)
 
@@ -75,20 +90,18 @@ export default function AlertsPage() {
     setCategories(allCats)
 
     // 4. Charger les réglages Ntfy et les Règles
-    if (userId) {
-      const { data: sData } = await supabase.from('user_settings').select('ntfy_topic').eq('user_id', userId)
-      if (sData && sData.length > 0 && sData[0].ntfy_topic) {
-        setNtfyInput(sData[0].ntfy_topic)
-      }
+    const { data: sData } = await supabase.from('user_settings').select('ntfy_topic').eq('user_id', userId)
+    if (sData && sData.length > 0 && sData[0].ntfy_topic) {
+      setNtfyInput(sData[0].ntfy_topic)
+    }
 
-      const { data: rData, error: rError } = await supabase.from('alert_rules').select('*').eq('user_id', userId)
-      if (!rError && rData) {
-        const loadedRules: Record<string, AlertRule> = {}
-        rData.forEach(r => {
-          loadedRules[r.categorie] = { fridge: r.fridge_days, freezer: r.freezer_days }
-        })
-        setRules(loadedRules)
-      }
+    const { data: rData, error: rError } = await supabase.from('alert_rules').select('*').eq('user_id', userId)
+    if (!rError && rData) {
+      const loadedRules: Record<string, AlertRule> = {}
+      rData.forEach(r => {
+        loadedRules[r.categorie] = { fridge: r.fridge_days, freezer: r.freezer_days }
+      })
+      setRules(loadedRules)
     }
   }
 
@@ -184,6 +197,22 @@ export default function AlertsPage() {
   return (
     <div className="space-y-6 pb-20">
 
+      {notIdentified ? (
+        <div className="bg-white p-8 rounded-2xl shadow-sm border border-amber-200 text-center">
+          <p className="text-3xl mb-2">🔒</p>
+          <h2 className="font-bold text-slate-800 mb-1">Utilisateur non identifié</h2>
+          <p className="text-sm text-slate-500">
+            Impossible de vérifier ta session. Reconnecte-toi pour voir tes alertes.
+          </p>
+          <a
+            href="/login"
+            className="inline-block mt-4 bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold px-5 py-2 rounded-lg transition"
+          >
+            Se reconnecter
+          </a>
+        </div>
+      ) : (
+      <>
       {/* SECTION NTFY */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
         <h1 className="text-xl font-bold mb-4 text-slate-800">Alertes & Notifications ⚠️</h1>
@@ -301,6 +330,8 @@ export default function AlertsPage() {
           </div>
         </div>
       ))}
+      </>
+      )}
       <Footer />
     </div>
   )

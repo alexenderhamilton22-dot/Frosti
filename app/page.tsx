@@ -91,11 +91,17 @@ export default function HomePage() {
     loadItems()
   }
 
-  async function loadProductsForCategory(catName: string) {
+async function loadProductsForCategory(catName: string) {
     const { data } = await supabase.from('product_templates').select('*, categories!inner(name)').eq('categories.name', catName)
     if (data) {
       setProducts(data)
-      if (data.length > 0) setSelectedProd(data[0].name)
+      if (data.length > 0) {
+        setSelectedProd(data[0].name)
+        setIsCreatingProd(false) // Il y a des produits, on affiche la liste
+      } else {
+        setSelectedProd('')
+        setIsCreatingProd(true) // C'est vide, on ouvre le champ de création directement !
+      }
     }
   }
 
@@ -107,9 +113,20 @@ export default function HomePage() {
     if (data) setItems(data)
   }
 
-  const handleCategoryChange = (val: string) => {
-    if (val === '__NEW_CAT__') { setIsCreatingCat(true); setSelectedCat('') } 
-    else { setIsCreatingCat(false); setSelectedCat(val); loadProductsForCategory(val) }
+const handleCategoryChange = (val: string) => {
+    if (val === '__NEW_CAT__') { 
+      setIsCreatingCat(true)
+      setSelectedCat('')
+      // On force la création du produit et on vide l'ancienne liste
+      setProducts([])
+      setIsCreatingProd(true)
+      setSelectedProd('')
+    } 
+    else { 
+      setIsCreatingCat(false)
+      setSelectedCat(val)
+      loadProductsForCategory(val) 
+    }
   }
 
   const handleProductChange = (val: string) => {
@@ -172,7 +189,27 @@ export default function HomePage() {
     setQty(item.qte); setUnit(item.unite || 'pièce(s)'); setDateEntree(item.date_entree || new Date().toISOString().slice(0, 10)); setDatePeremption(item.date_peremption || ''); setNotes(item.notes || ''); setIsModalOpen(true)
   }
 
-  async function handleSaveItem(e: React.FormEvent) {
+
+function openDuplicateModal(item: Item) {
+    // La seule différence avec l'édition : on met l'ID à null pour créer un NOUVEAU produit
+    setEditingItemId(null); 
+    setSelectedCat(item.categorie); 
+    setIsCreatingCat(false);
+    
+    loadProductsForCategory(item.categorie).then(() => { 
+      setSelectedProd(item.produit) 
+    });
+    
+    setQty(item.qte); 
+    setUnit(item.unite || 'pièce(s)'); 
+    setDateEntree(item.date_entree || new Date().toISOString().slice(0, 10)); 
+    setDatePeremption(item.date_peremption || ''); 
+    setNotes(item.notes || ''); 
+    setIsModalOpen(true);
+  }
+
+
+async function handleSaveItem(e: React.FormEvent) {
     e.preventDefault()
     let finalCat = selectedCat
     if (isCreatingCat && newCatInput.trim()) {
@@ -181,11 +218,24 @@ export default function HomePage() {
       const { data: cData } = await supabase.from('categories').select('*').order('name')
       if (cData) setCategories(cData)
     }
+    
     let finalProd = selectedProd
     if (isCreatingProd && newProdInput.trim()) {
       finalProd = newProdInput.trim()
-      const catObj = categories.find(c => c.name === finalCat)
-      if (catObj) await supabase.from('product_templates').insert([{ category_id: catObj.id, name: finalProd }])
+      
+      // On cherche l'ID de la catégorie
+      let catObj = categories.find(c => c.name === finalCat)
+      let realCatId = catObj?.id
+      
+      // Si la catégorie vient d'être créée, on va chercher son ID tout neuf dans la base
+      if (!realCatId) {
+         const { data: freshCat } = await supabase.from('categories').select('id').eq('name', finalCat).single()
+         realCatId = freshCat?.id
+      }
+      
+      if (realCatId) {
+        await supabase.from('product_templates').insert([{ category_id: realCatId, name: finalProd }])
+      }
     }
     if (!finalProd) return
 
@@ -217,10 +267,19 @@ export default function HomePage() {
 
   async function deleteItem(id: string) { await supabase.from('items').delete().eq('id', id); loadItems() }
 
-  const filteredItems = items.filter(i => {
+const filteredItems = items.filter(i => {
     if (activeEqId && String(i.congelo_id) !== String(activeEqId)) return false
     if (filterCat && i.categorie !== filterCat) return false
-    if (searchTxt && !i.produit.toLowerCase().includes(searchTxt.toLowerCase())) return false
+    
+    if (searchTxt) {
+      const searchLower = searchTxt.toLowerCase()
+      const matchProduit = i.produit.toLowerCase().includes(searchLower)
+      const matchNote = i.notes ? i.notes.toLowerCase().includes(searchLower) : false
+      
+      // Si le texte n'est ni dans le produit, ni dans la note, on masque l'élément
+      if (!matchProduit && !matchNote) return false
+    }
+    
     return true
   })
 
@@ -341,6 +400,7 @@ export default function HomePage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
+                      <button onClick={() => openDuplicateModal(item)} className="text-xs text-slate-400 hover:text-teal-600 font-semibold px-2 py-1 bg-slate-50 rounded-lg border border-slate-100" title="Dupliquer ce produit">Copier 📋</button>
                       <button onClick={() => openEditModal(item)} className="text-xs text-slate-400 hover:text-sky-600 font-semibold px-2 py-1 bg-slate-50 rounded-lg border border-slate-100">Éditer ✏️</button>
                       <button onClick={() => deleteItem(item.id)} className="text-slate-300 hover:text-red-500 text-base font-bold px-2" title="Supprimer ce produit">🗑️</button>
                     </div>
@@ -407,7 +467,7 @@ export default function HomePage() {
                   <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Quantité</label>
                   <input type="number" min="1" step="any" value={qty} onChange={e => setQty(Number(e.target.value))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium outline-none focus:border-sky-500" required />
                 </div>
-                <div>
+<div>
                   <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Unité</label>
                   <select value={unit} onChange={e => setUnit(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium outline-none focus:border-sky-500">
                     <option>pièce(s)</option>
@@ -416,6 +476,9 @@ export default function HomePage() {
                     <option>sachet(s)</option>
                     <option>boîte(s)</option>
                     <option>barquette(s)</option>
+                    <option>Bouteille 25cl</option>
+                    <option>Bouteille 33cl</option>
+                    <option>Bouteille 75cl</option>
                     <option>kg</option>
                     <option>g</option>
                     <option>L</option>

@@ -90,7 +90,15 @@ export default function SearchPage() {
     // Filtres classiques
     if (selectedEq && String(i.congelo_id) !== String(selectedEq)) return false
     if (selectedCat && i.categorie !== selectedCat) return false
-    if (searchQuery && !i.produit.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    
+    // 🔍 Recherche globale : Nom du produit OU Note
+    if (searchQuery) {
+      const searchLower = searchQuery.toLowerCase()
+      const matchProduit = i.produit.toLowerCase().includes(searchLower)
+      const matchNote = i.notes ? i.notes.toLowerCase().includes(searchLower) : false
+      
+      if (!matchProduit && !matchNote) return false
+    }
 
     // Filtres sur la Date d'entrée
     if (dateEntreeStart && i.date_entree < dateEntreeStart) return false
@@ -201,6 +209,8 @@ export default function SearchPage() {
                     </div>
                     <button onClick={() => deleteItem(item.id)} className="text-slate-300 hover:text-red-500 text-base font-bold px-2" title="Supprimer ce produit">🗑️</button>
                   </div>
+                  {/* Affichage de la note si elle existe */}
+                  {item.notes && <p className="text-xs text-slate-400 italic mt-1">Note : {item.notes}</p>}
                 </div>
 
                 <div className="flex justify-between items-center mt-4 pt-3 border-t border-slate-50">

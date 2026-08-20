@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { createClient } from './supabase/client'
 import Footer from './components/Footer'
-import BarcodeScanner from './components/BarcodeScanner'
 
 const FREEZER_COLORS = [
   'bg-emerald-500 text-white shadow-emerald-500/30',
@@ -60,9 +59,6 @@ export default function HomePage() {
   
   const [newEqName, setNewEqName] = useState('')
   const [newEqIsFridge, setNewEqIsFridge] = useState(false)
-
-  // Nouvel état pour le scanner de code-barres
-  const [isScannerOpen, setIsScannerOpen] = useState(false)
 
   const supabase = createClient()
 
@@ -133,17 +129,24 @@ export default function HomePage() {
     }
   }
 
+  // Nouvelle fonction pour supprimer un équipement
   async function handleDeleteEq(eqId: string, eqName: string, e: React.MouseEvent) {
-    e.stopPropagation() 
+    e.stopPropagation() // Empêche de déclencher la sélection de l'équipement
+    
+    // Vérifier s'il y a des produits dans cet équipement
     const itemsInEq = items.filter(i => String(i.congelo_id) === String(eqId))
     
     if (itemsInEq.length > 0) {
-      if (!confirm(`⚠️ Attention ! L'équipement "${eqName}" contient encore ${itemsInEq.length} produit(s).\n\nÊtes-vous sûr de vouloir supprimer cet équipement ainsi que tout son contenu ?`)) return
+      if (!confirm(`⚠️ Attention ! L'équipement "${eqName}" contient encore ${itemsInEq.length} produit(s).\n\nÊtes-vous sûr de vouloir supprimer cet équipement ainsi que tout son contenu ?`)) {
+        return
+      }
+      // Supprimer manuellement les produits pour éviter une erreur de clé étrangère
       await supabase.from('items').delete().eq('congelo_id', eqId)
     } else {
       if (!confirm(`Voulez-vous vraiment supprimer l'équipement "${eqName}" ?`)) return
     }
 
+    // Supprimer l'équipement
     const { error } = await supabase.from('freezers').delete().eq('id', eqId)
     if (!error) {
       const newEqs = equipments.filter(eq => String(eq.id) !== String(eqId))
@@ -151,7 +154,7 @@ export default function HomePage() {
       if (String(activeEqId) === String(eqId)) {
         setActiveEqId(newEqs.length > 0 ? String(newEqs[0].id) : '')
       }
-      loadItems() 
+      loadItems() // Recharger les items pour mettre à jour l'affichage
     } else {
       alert("Erreur lors de la suppression de l'équipement : " + error.message)
     }
@@ -169,44 +172,20 @@ export default function HomePage() {
     setQty(item.qte); setUnit(item.unite || 'pièce(s)'); setDateEntree(item.date_entree || new Date().toISOString().slice(0, 10)); setDatePeremption(item.date_peremption || ''); setNotes(item.notes || ''); setIsModalOpen(true)
   }
 
-  // Fonction appelée lorsque le scanner trouve un produit
-  function handleProductScanned(productName: string, categoryName: string) {
-    setIsScannerOpen(false)
-    
-    // 1. On force le mode "Création" pour être sûr d'avoir le champ libre
-    setIsCreatingCat(true)
-    setNewCatInput(categoryName)
-    setSelectedCat('__NEW_CAT__')
-
-    setIsCreatingProd(true)
-    setNewProdInput(productName)
-    setSelectedProd('__NEW_PROD__')
-  }
-
   async function handleSaveItem(e: React.FormEvent) {
     e.preventDefault()
     let finalCat = selectedCat
     if (isCreatingCat && newCatInput.trim()) {
       finalCat = newCatInput.trim()
-      // On tente d'insérer, si ça existe déjà ce n'est pas grave
       await supabase.from('categories').insert([{ name: finalCat }]).select()
       const { data: cData } = await supabase.from('categories').select('*').order('name')
       if (cData) setCategories(cData)
     }
-    
     let finalProd = selectedProd
     if (isCreatingProd && newProdInput.trim()) {
       finalProd = newProdInput.trim()
       const catObj = categories.find(c => c.name === finalCat)
-      // Si la catégorie vient d'être créée, on refait une requête pour choper son ID
-      let realCatId = catObj?.id
-      if (!realCatId) {
-         const { data: freshCat } = await supabase.from('categories').select('id').eq('name', finalCat).single()
-         realCatId = freshCat?.id
-      }
-      if (realCatId) {
-        await supabase.from('product_templates').insert([{ category_id: realCatId, name: finalProd }])
-      }
+      if (catObj) await supabase.from('product_templates').insert([{ category_id: catObj.id, name: finalProd }])
     }
     if (!finalProd) return
 
@@ -250,15 +229,6 @@ export default function HomePage() {
 
   return (
     <div className="space-y-6 pb-20">
-      
-      {/* Scanner Modal */}
-      {isScannerOpen && (
-        <BarcodeScanner 
-          onClose={() => setIsScannerOpen(false)} 
-          onProductFound={handleProductScanned} 
-        />
-      )}
-
       <section className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
         <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Mes espaces de stockage</h2>
         
@@ -342,6 +312,7 @@ export default function HomePage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {filteredItems.length > 0 ? (
           filteredItems.map(item => {
+            // Trouver l'équipement et définir la bonne couleur/icône
             const eq = equipments.find(e => String(e.id) === String(item.congelo_id))
             const isFridge = eq?.is_fridge
             
@@ -400,23 +371,11 @@ export default function HomePage() {
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto space-y-4">
-            
             <div className="flex justify-between items-center pb-2 border-b border-slate-100">
               <h3 className="font-bold text-lg text-slate-800">{editingItemId ? 'Modifier le produit ✏️' : 'Ajouter un aliment 🛒'}</h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl font-bold p-1">✕</button>
             </div>
-            
-            {/* BOUTON SCANNER */}
-            {!editingItemId && (
-              <button 
-                onClick={() => setIsScannerOpen(true)}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition"
-              >
-                <span>📷 Scanner un code-barres</span>
-              </button>
-            )}
-
-            <form onSubmit={handleSaveItem} className="space-y-4 pt-2">
+            <form onSubmit={handleSaveItem} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Catégorie</label>
                 <select value={isCreatingCat ? '__NEW_CAT__' : selectedCat} onChange={e => handleCategoryChange(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium outline-none focus:border-sky-500">

@@ -2,15 +2,35 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 
 export default function Navbar() {
   const pathname = usePathname()
   const router = useRouter()
+  const [userName, setUserName] = useState<string>('')
+
+  // Récupération du VRAI nom de l'utilisateur au chargement
+  useEffect(() => {
+    const value = `; ${document.cookie}`
+    // On cherche d'abord le cookie 'congelo_username'
+    const parts = value.split(`; congelo_username=`)
+    
+    if (parts.length === 2) {
+      const rawName = parts.pop()?.split(';').shift() || ''
+      // decodeURIComponent permet d'afficher correctement les espaces et accents
+      setUserName(decodeURIComponent(rawName))
+    } else {
+      // En plan B, si le username n'existe pas, on tente de lire l'ID
+      const idParts = value.split(`; congelo_user_id=`)
+      if (idParts.length === 2) {
+        setUserName(idParts.pop()?.split(';').shift() || 'Inconnu')
+      }
+    }
+  }, [pathname])
 
   // Si on est sur la page de login, on n'affiche pas la barre
   if (pathname === '/login') return null
 
-  // On sépare le texte et l'icône pour pouvoir cacher le texte sur mobile
   const links = [
     { href: '/', label: 'Congélateurs', icon: '❄️' },
     { href: '/alerts', label: 'Alertes', icon: '⚠️' },
@@ -27,13 +47,15 @@ export default function Navbar() {
     <nav className="bg-white border-b border-gray-100 shadow-sm sticky top-0 z-50">
       <div className="max-w-4xl mx-auto px-3 sm:px-4 flex justify-between items-center h-16">
         
-        {/* Logo et Nom Frosti */}
+        {/* Logo et Nom Frosti + Utilisateur connecté */}
         <Link href="/" className="flex items-center space-x-2 shrink-0">
           <img src="/logo.png" alt="Frosti Logo" className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl object-cover shadow-sm" />
           <div>
             <span className="font-bold text-lg sm:text-xl text-slate-800 tracking-tight">Frosti</span>
-            {/* Le sous-titre disparait sur mobile (hidden sm:block) */}
-            <span className="hidden sm:block text-[10px] text-slate-400 font-medium -mt-1">Ma gestion de congélos</span>
+            {/* Le sous-titre dynamique qui affiche le vrai utilisateur */}
+            <span className="hidden sm:block text-[10px] text-sky-600 font-bold -mt-1 truncate max-w-[150px]">
+              👤 Connecté : {userName}
+            </span>
           </div>
         </Link>
 
@@ -50,7 +72,6 @@ export default function Navbar() {
                 }`}
                 title={link.label}
               >
-                {/* Le texte est caché sur mobile (hidden sm:inline), seul l'emoji reste */}
                 <span className="hidden sm:inline mr-1.5">{link.label}</span>
                 <span className="text-base sm:text-sm">{link.icon}</span>
               </Link>

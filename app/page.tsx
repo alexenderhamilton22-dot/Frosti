@@ -129,6 +129,37 @@ export default function HomePage() {
     }
   }
 
+  // Nouvelle fonction pour supprimer un équipement
+  async function handleDeleteEq(eqId: string, eqName: string, e: React.MouseEvent) {
+    e.stopPropagation() // Empêche de déclencher la sélection de l'équipement
+    
+    // Vérifier s'il y a des produits dans cet équipement
+    const itemsInEq = items.filter(i => String(i.congelo_id) === String(eqId))
+    
+    if (itemsInEq.length > 0) {
+      if (!confirm(`⚠️ Attention ! L'équipement "${eqName}" contient encore ${itemsInEq.length} produit(s).\n\nÊtes-vous sûr de vouloir supprimer cet équipement ainsi que tout son contenu ?`)) {
+        return
+      }
+      // Supprimer manuellement les produits pour éviter une erreur de clé étrangère
+      await supabase.from('items').delete().eq('congelo_id', eqId)
+    } else {
+      if (!confirm(`Voulez-vous vraiment supprimer l'équipement "${eqName}" ?`)) return
+    }
+
+    // Supprimer l'équipement
+    const { error } = await supabase.from('freezers').delete().eq('id', eqId)
+    if (!error) {
+      const newEqs = equipments.filter(eq => String(eq.id) !== String(eqId))
+      setEquipments(newEqs)
+      if (String(activeEqId) === String(eqId)) {
+        setActiveEqId(newEqs.length > 0 ? String(newEqs[0].id) : '')
+      }
+      loadItems() // Recharger les items pour mettre à jour l'affichage
+    } else {
+      alert("Erreur lors de la suppression de l'équipement : " + error.message)
+    }
+  }
+
   function openAddModal() {
     setEditingItemId(null); setIsCreatingCat(false); setIsCreatingProd(false);
     if (categories.length > 0) { setSelectedCat(categories[0].name); loadProductsForCategory(categories[0].name) }
@@ -209,9 +240,14 @@ export default function HomePage() {
                 const isActive = String(activeEqId) === String(f.id)
                 const colorClass = FREEZER_COLORS[index % FREEZER_COLORS.length]
                 return (
-                  <button key={f.id} onClick={() => setActiveEqId(String(f.id))} className={`px-4 py-2.5 rounded-xl text-sm font-bold transition shadow-sm ${isActive ? `${colorClass} ring-4 ring-offset-2 ring-slate-200 scale-105` : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                    ❄️ {f.name}
-                  </button>
+                  <div key={f.id} className={`flex items-center rounded-xl transition shadow-sm ${isActive ? `${colorClass} ring-4 ring-offset-2 ring-slate-200 scale-105` : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                    <button onClick={() => setActiveEqId(String(f.id))} className="px-3 py-2.5 text-sm font-bold flex-1 text-left">
+                      ❄️ {f.name}
+                    </button>
+                    <button onClick={(e) => handleDeleteEq(String(f.id), f.name, e)} className="pr-3 pl-1 py-2.5 text-sm opacity-60 hover:opacity-100 hover:text-red-500 transition-opacity" title="Supprimer cet équipement">
+                      🗑️
+                    </button>
+                  </div>
                 )
               })}
             </div>
@@ -226,9 +262,14 @@ export default function HomePage() {
                 const isActive = String(activeEqId) === String(f.id)
                 const colorClass = FRIDGE_COLORS[index % FRIDGE_COLORS.length]
                 return (
-                  <button key={f.id} onClick={() => setActiveEqId(String(f.id))} className={`px-4 py-2.5 rounded-xl text-sm font-bold transition shadow-sm ${isActive ? `${colorClass} ring-4 ring-offset-2 ring-slate-200 scale-105` : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                    🧊 {f.name}
-                  </button>
+                  <div key={f.id} className={`flex items-center rounded-xl transition shadow-sm ${isActive ? `${colorClass} ring-4 ring-offset-2 ring-slate-200 scale-105` : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                    <button onClick={() => setActiveEqId(String(f.id))} className="px-3 py-2.5 text-sm font-bold flex-1 text-left">
+                      🧊 {f.name}
+                    </button>
+                    <button onClick={(e) => handleDeleteEq(String(f.id), f.name, e)} className="pr-3 pl-1 py-2.5 text-sm opacity-60 hover:opacity-100 hover:text-red-500 transition-opacity" title="Supprimer cet équipement">
+                      🗑️
+                    </button>
+                  </div>
                 )
               })}
             </div>
@@ -259,7 +300,7 @@ export default function HomePage() {
           <span>+ Ajouter un produit</span>
         </button>
 
-<div className="flex flex-col sm:flex-row gap-2 flex-1 w-full sm:max-w-md">
+        <div className="flex flex-col sm:flex-row gap-2 flex-1 w-full sm:max-w-md">
           <select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 outline-none flex-1">
             <option value="">Toutes les catégories</option>
             {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
@@ -301,7 +342,7 @@ export default function HomePage() {
                     </div>
                     <div className="flex items-center gap-1">
                       <button onClick={() => openEditModal(item)} className="text-xs text-slate-400 hover:text-sky-600 font-semibold px-2 py-1 bg-slate-50 rounded-lg border border-slate-100">Éditer ✏️</button>
-                      <button onClick={() => deleteItem(item.id)} className="text-slate-300 hover:text-red-500 text-lg font-bold px-2">×</button>
+                      <button onClick={() => deleteItem(item.id)} className="text-slate-300 hover:text-red-500 text-base font-bold px-2" title="Supprimer ce produit">🗑️</button>
                     </div>
                   </div>
                   {item.notes && <p className="text-xs text-slate-400 italic mt-1">Note : {item.notes}</p>}
@@ -369,7 +410,16 @@ export default function HomePage() {
                 <div>
                   <label className="block text-xs font-bold uppercase text-slate-400 mb-1">Unité</label>
                   <select value={unit} onChange={e => setUnit(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium outline-none focus:border-sky-500">
-                    <option>pièce(s)</option><option>portion(s)</option><option>sachet(s)</option><option>boîte(s)</option><option>barquette(s)</option><option>kg</option><option>g</option><option>L</option><option>mL</option>
+                    <option>pièce(s)</option>
+                    <option>portion(s)</option>
+                    <option>tranche(s)</option>
+                    <option>sachet(s)</option>
+                    <option>boîte(s)</option>
+                    <option>barquette(s)</option>
+                    <option>kg</option>
+                    <option>g</option>
+                    <option>L</option>
+                    <option>mL</option>
                   </select>
                 </div>
               </div>

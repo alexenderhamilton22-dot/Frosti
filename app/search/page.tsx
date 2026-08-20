@@ -31,9 +31,17 @@ interface Item {
 export default function SearchPage() {
   const [items, setItems] = useState<Item[]>([])
   const [equipments, setEquipments] = useState<Equipment[]>([])
+  
+  // États pour la recherche classique
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCat, setSelectedCat] = useState('')
   const [selectedEq, setSelectedEq] = useState('')
+
+  // États pour les plages de dates
+  const [dateEntreeStart, setDateEntreeStart] = useState('')
+  const [dateEntreeEnd, setDateEntreeEnd] = useState('')
+  const [dlcStart, setDlcStart] = useState('')
+  const [dlcEnd, setDlcEnd] = useState('')
 
   const supabase = createClient()
 
@@ -79,19 +87,52 @@ export default function SearchPage() {
   const fridges = equipments.filter(e => e.is_fridge)
 
   const filteredItems = items.filter(i => {
+    // Filtres classiques
     if (selectedEq && String(i.congelo_id) !== String(selectedEq)) return false
     if (selectedCat && i.categorie !== selectedCat) return false
     if (searchQuery && !i.produit.toLowerCase().includes(searchQuery.toLowerCase())) return false
+
+    // Filtres sur la Date d'entrée
+    if (dateEntreeStart && i.date_entree < dateEntreeStart) return false
+    if (dateEntreeEnd && i.date_entree > dateEntreeEnd) return false
+
+    // Filtres sur la DLC
+    if (dlcStart || dlcEnd) {
+      // Si on filtre par DLC mais que le produit n'a pas de DLC, on l'exclut
+      if (!i.date_peremption) return false
+      if (dlcStart && i.date_peremption < dlcStart) return false
+      if (dlcEnd && i.date_peremption > dlcEnd) return false
+    }
+
     return true
   })
+
+  // Fonction pour réinitialiser tous les filtres
+  function resetFilters() {
+    setSearchQuery('')
+    setSelectedCat('')
+    setSelectedEq('')
+    setDateEntreeStart('')
+    setDateEntreeEnd('')
+    setDlcStart('')
+    setDlcEnd('')
+  }
 
   return (
     <div className="space-y-6 pb-20">
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <h1 className="text-xl font-bold mb-1 text-slate-800">Recherche globale 🔍</h1>
-        <p className="text-slate-400 text-sm mb-4">Trouvez un produit dans l'ensemble de vos espaces en un clin d'œil.</p>
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h1 className="text-xl font-bold mb-1 text-slate-800">Recherche & Filtres 🔍</h1>
+            <p className="text-slate-400 text-sm">Trouvez un produit en combinant plusieurs critères.</p>
+          </div>
+          <button onClick={resetFilters} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2 px-3 rounded-lg transition">
+            Réinitialiser
+          </button>
+        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Champs de recherche de base */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
           <input type="text" placeholder="Rechercher par nom..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-sky-500 text-slate-800" />
           <select value={selectedEq} onChange={e => setSelectedEq(e.target.value)} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-sky-500 text-slate-800">
             <option value="">Tous les espaces</option>
@@ -102,6 +143,29 @@ export default function SearchPage() {
             <option value="">Toutes les catégories</option>
             {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
           </select>
+        </div>
+
+        {/* Nouveaux champs : Recherche par périodes */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Date d'entrée (Période)</label>
+            <div className="flex flex-col sm:flex-row items-center gap-2">
+              <span className="text-xs text-slate-400 font-medium">Du</span>
+              <input type="date" value={dateEntreeStart} onChange={e => setDateEntreeStart(e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-sky-500 text-slate-800" />
+              <span className="text-xs text-slate-400 font-medium">au</span>
+              <input type="date" value={dateEntreeEnd} onChange={e => setDateEntreeEnd(e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-sky-500 text-slate-800" />
+            </div>
+          </div>
+
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">DLC (Période)</label>
+            <div className="flex flex-col sm:flex-row items-center gap-2">
+              <span className="text-xs text-slate-400 font-medium">Du</span>
+              <input type="date" value={dlcStart} onChange={e => setDlcStart(e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-sky-500 text-slate-800" />
+              <span className="text-xs text-slate-400 font-medium">au</span>
+              <input type="date" value={dlcEnd} onChange={e => setDlcEnd(e.target.value)} className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm outline-none focus:border-sky-500 text-slate-800" />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -135,15 +199,15 @@ export default function SearchPage() {
                         <span className={`text-[10px] px-2 py-0.5 rounded-md font-semibold ${colorClass}`}>{eqIcon} {eqName}</span>
                       </div>
                     </div>
-                    <button onClick={() => deleteItem(item.id)} className="text-slate-300 hover:text-red-500 text-lg font-bold px-2">×</button>
+                    <button onClick={() => deleteItem(item.id)} className="text-slate-300 hover:text-red-500 text-base font-bold px-2" title="Supprimer ce produit">🗑️</button>
                   </div>
                 </div>
 
                 <div className="flex justify-between items-center mt-4 pt-3 border-t border-slate-50">
                   <div className="flex items-center space-x-2 bg-slate-50 p-1 rounded-xl border border-slate-100">
-                    <button onClick={() => updateQty(item.id, -1)} className="w-8 h-8 bg-white rounded-lg shadow-sm font-bold text-slate-700">-</button>
+                    <button onClick={() => updateQty(item.id, -1)} className="w-8 h-8 bg-white rounded-lg shadow-sm font-bold text-slate-700 hover:bg-sky-50 hover:text-sky-600">-</button>
                     <span className="text-sm font-bold px-2 text-slate-800 min-w-[60px] text-center">{item.qte} {item.unite}</span>
-                    <button onClick={() => updateQty(item.id, 1)} className="w-8 h-8 bg-white rounded-lg shadow-sm font-bold text-slate-700">+</button>
+                    <button onClick={() => updateQty(item.id, 1)} className="w-8 h-8 bg-white rounded-lg shadow-sm font-bold text-slate-700 hover:bg-sky-50 hover:text-sky-600">+</button>
                   </div>
                   <div className="text-right text-[11px] text-slate-400">
                     {item.date_peremption ? <span className="font-semibold text-amber-600 block">DLC : {item.date_peremption}</span> : <span>Entré le {item.date_entree}</span>}
@@ -155,7 +219,7 @@ export default function SearchPage() {
         ) : (
           <div className="col-span-full text-center py-12 bg-white rounded-2xl border border-dashed border-slate-200">
             <span className="text-4xl">🔍</span>
-            <p className="text-slate-400 text-sm mt-2">Aucun produit ne correspond à votre recherche.</p>
+            <p className="text-slate-400 text-sm mt-2">Aucun produit ne correspond à vos filtres.</p>
           </div>
         )}
       </div>

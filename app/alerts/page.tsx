@@ -27,33 +27,28 @@ interface Item {
   id: string; user_id: string; congelo_id: string; categorie: string; produit: string;
   qte: number; unite: string; date_entree: string; date_peremption: string | null; notes: string | null
 }
+interface AlertRule { fridge: number; freezer: number }
 
 export default function AlertsPage() {
   const [items, setItems] = useState<Item[]>([])
   const [equipments, setEquipments] = useState<Equipment[]>([])
-  const [alertDays, setAlertDays] = useState<number>(30)
+  const [categories, setCategories] = useState<string[]>([])
+  const [rules, setRules] = useState<Record<string, AlertRule>>({})
   const [ntfyInput, setNtfyInput] = useState('')
+  const [isSavingRules, setIsSavingRules] = useState(false)
+  
   const supabase = createClient()
 
-  // Fonction de lecture de cookie ultra-fiable
-function getCookie(name: string) {
-    // 1. Cherche dans les cookies
+  function getCookie(name: string) {
     const value = `; ${document.cookie}`
     const parts = value.split(`; ${name}=`)
     if (parts.length === 2) return parts.pop()?.split(';').shift()
-    
-    // 2. Par sécurité, cherche aussi dans le localStorage si l'app l'y stocke
     return localStorage.getItem(name)
   }
 
-  useEffect(() => {
-    const savedDays = localStorage.getItem('frosti_alert_days')
-    if (savedDays) setAlertDays(parseInt(savedDays, 10))
-    loadData()
-  }, [])
+  useEffect(() => { loadData() }, [])
 
-async function loadData() {
-    // On récupère directement tous les cookies du navigateur pour trouver le bon
+  async function loadData() {
     const cookies = document.cookie.split(';').reduce((acc, cookie) => {
       const [key, value] = cookie.trim().split('=');
       acc[key] = value;
@@ -62,58 +57,87 @@ async function loadData() {
 
     const userId = cookies['congelo_user_id'];
 
+    // 1. Charger les équipements
     let fQuery = supabase.from('freezers').select('*').order('created_at', { ascending: true })
     if (userId) fQuery = fQuery.eq('user_id', userId)
     const { data: fData } = await fQuery
     if (fData) setEquipments(fData)
 
+    // 2. Charger les items
     let query = supabase.from('items').select('*').order('date_peremption', { ascending: true })
     if (userId) query = query.eq('user_id', userId)
     const { data: iData } = await query
     if (iData) setItems(iData)
 
+    // 3. Charger toutes les catégories disponibles
+    const { data: cData } = await supabase.from('categories').select('name').order('name')
+    let allCats: string[] = []
+    if (cData) allCats = cData.map(c => c.name)
+    // Au cas où des items ont des catégories supprimées, on les rajoute
+    if (iData) {
+      const itemCats = Array.from(new Set(iData.map(i => i.categorie)))
+      allCats = Array.from(new Set([...allCats, ...itemCats]))
+    }
+    setCategories(allCats)
+
+    // 4. Charger les réglages Ntfy et les Règles
     if (userId) {
-      const { data: sData } = await supabase.from('user_settings').select('ntfy_topic').eq('user_id', userId).single()
-      if (sData && sData.ntfy_topic) {
-        setNtfyInput(sData.ntfy_topic)
+      const { data: sData } = await supabase.from('user_settings').select('ntfy_topic').eq('user_id', userId)
+      if (sData && sData.length > 0 && sData[0].ntfy_topic) {
+        setNtfyInput(sData[0].ntfy_topic)
+      }
+
+      const { data: rData, error: rError } = await supabase.from('alert_rules').select('*').eq('user_id', userId)
+      if (!rError && rData) {
+        const loadedRules: Record<string, AlertRule> = {}
+        rData.forEach(r => {
+          loadedRules[r.categorie] = { fridge: r.fridge_days, freezer: r.freezer_days }
+        })
+        setRules(loadedRules)
       }
     }
   }
 
+  const handleRuleChange = (cat: string, type: 'fridge' | 'freezer', value: number) => {
+    setRules(prev => ({
+      ...prev,
+      [cat]: {
+        ...prev[cat],
+        fridge: type === 'fridge' ? value : (prev[cat]?.fridge ?? 7),
+        freezer: type === 'freezer' ? value : (prev[cat]?.freezer ?? 90)
+      }
+    }))
+  }
+
+  async function saveAlertRules() {
+    setIsSavingRules(true)
+    const userId = getCookie('congelo_user_id')
+    if (!userId) { alert("Utilisateur non identifié."); setIsSavingRules(false); return }
+
+    const upsertData = categories.map(cat => ({
+      user_id: userId,
+      categorie: cat,
+      fridge_days: rules[cat]?.fridge ?? 7,
+      freezer_days: rules[cat]?.freezer ?? 90
+    }))
+
+    const { error } = await supabase.from('alert_rules').upsert(upsertData, { onConflict: 'user_id, categorie' })
+    setIsSavingRules(false)
+
+    if (!error) alert("Règles d'alertes sauvegardées avec succès !")
+    else alert("Erreur lors de la sauvegarde : " + error.message)
+    
+    loadData()
+  }
+
   async function saveNtfyTopic() {
-    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
-      const [key, value] = cookie.trim().split('=');
-      acc[key] = value;
-      return acc;
-    }, {} as Record<string, string>);
+    const userId = getCookie('congelo_user_id')
+    if (!userId) { alert("Utilisateur non identifié."); return }
 
-    const userId = cookies['congelo_user_id'];
-
-    if (!userId) {
-      alert("Utilisateur non identifié. Veuillez vous reconnecter.")
-      return
-    }
-
-    const { error } = await supabase
-      .from('user_settings')
-      .upsert({ user_id: userId, ntfy_topic: ntfyInput })
-
-    if (!error) {
-      alert("Canal Ntfy enregistré avec succès !")
-    } else {
-      console.error("Erreur Supabase:", error)
-      alert("Erreur : " + error.message)
-    }
+    const { error } = await supabase.from('user_settings').upsert({ user_id: userId, ntfy_topic: ntfyInput })
+    if (!error) alert(`Canal "${ntfyInput}" enregistré !`)
+    else alert("Erreur Supabase : " + error.message)
   }
-
-  const handleAlertDaysChange = (days: number) => {
-    setAlertDays(days)
-    localStorage.setItem('frosti_alert_days', days.toString())
-  }
-
-
-
-
 
   async function updateQty(id: string, delta: number) {
     const item = items.find(i => String(i.id) === String(id))
@@ -135,37 +159,100 @@ async function loadData() {
   const freezers = equipments.filter(e => !e.is_fridge)
   const fridges = equipments.filter(e => e.is_fridge)
 
+  // 🔴 Périmés = date_peremption dépassée par rapport à aujourd'hui
   const expiredItems = items.filter(i => i.date_peremption && i.date_peremption < today)
+  
+  // 🟠 Alertes personnalisées
   const warningItems = items.filter(i => {
-    if (!i.date_peremption || i.date_peremption < today) return false
-    const diffTime = new Date(i.date_peremption).getTime() - new Date(today).getTime()
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) <= alertDays
+    // Si déjà périmé, il est dans expiredItems, on l'ignore ici
+    if (i.date_peremption && i.date_peremption < today) return false
+    
+    const eq = equipments.find(e => String(e.id) === String(i.congelo_id))
+    const isFridge = eq?.is_fridge
+    
+    // Récupération de la règle (ou valeur par défaut 7 / 90)
+    const rule = rules[i.categorie] || { fridge: 7, freezer: 90 }
+    const threshold = isFridge ? rule.fridge : rule.freezer
+
+    if (i.date_peremption) {
+      // Alerte basée sur la DLC (ex: il reste 5 jours et le seuil est à 7)
+      const diffTime = new Date(i.date_peremption).getTime() - new Date(today).getTime()
+      const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      return daysLeft <= threshold
+    } else {
+      // Alerte basée sur l'âge (Date d'entrée) si aucune DLC (ex: dans le congélo depuis 95 jours pour un seuil à 90)
+      const diffTime = new Date(today).getTime() - new Date(i.date_entree).getTime()
+      const ageDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+      return ageDays >= threshold
+    }
   })
 
   return (
     <div className="space-y-6 pb-20">
+      
+      {/* SECTION NTFY */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <h1 className="text-xl font-bold mb-4 text-slate-800">Alertes & Péremptions ⚠️</h1>
-        
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex-1">
-            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Alerte avant (jours) :</label>
-            <input type="number" min="1" value={alertDays} onChange={e => handleAlertDaysChange(Number(e.target.value))} className="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-amber-600 outline-none" />
-          </div>
-
-          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex-1">
-            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Mon canal Ntfy :</label>
-            <div className="flex gap-2">
-              <input type="text" placeholder="ex: mon_canal_secret" value={ntfyInput} onChange={e => setNtfyInput(e.target.value)} className="p-2 border rounded-lg flex-1 text-sm outline-none" />
-              <button onClick={saveNtfyTopic} className="bg-sky-500 text-white px-4 rounded-lg font-bold text-sm">OK</button>
-            </div>
+        <h1 className="text-xl font-bold mb-4 text-slate-800">Alertes & Notifications ⚠️</h1>
+        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Mon canal Ntfy :</label>
+          <div className="flex gap-2">
+            <input type="text" placeholder="ex: frosti_alertes_famille" value={ntfyInput} onChange={e => setNtfyInput(e.target.value)} className="p-2 bg-white border border-slate-200 rounded-lg flex-1 text-sm outline-none focus:border-sky-500" />
+            <button onClick={saveNtfyTopic} className="bg-sky-500 text-white px-4 rounded-lg font-bold text-sm hover:bg-sky-600 transition">OK</button>
           </div>
         </div>
       </div>
 
+      {/* SECTION REGLAGES DES SEUILS */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Mes seuils d'alerte personnalisés</h2>
+          <button onClick={saveAlertRules} disabled={isSavingRules} className="bg-teal-500 hover:bg-teal-600 text-white text-xs px-4 py-2 rounded-lg font-bold transition shadow-sm disabled:opacity-50">
+            {isSavingRules ? '⏳...' : '💾 Sauvegarder'}
+          </button>
+        </div>
+        <p className="text-xs text-slate-400 mb-4">
+          Délai avant DLC, ou durée de présence si pas de DLC. Par défaut : <span className="font-bold text-sky-500">7j</span> au frigo, <span className="font-bold text-sky-500">90j</span> au congélo.
+        </p>
+
+        <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+          {categories.length > 0 ? categories.map(cat => (
+            <div key={cat} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl gap-3">
+              <span className="text-sm font-bold text-slate-700 min-w-[120px]">{cat}</span>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🧊</span>
+                  <input 
+                    type="number" min="1" 
+                    value={rules[cat]?.fridge ?? 7} 
+                    onChange={e => handleRuleChange(cat, 'fridge', Number(e.target.value))} 
+                    className="w-16 p-1.5 text-center text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg outline-none focus:border-sky-500" 
+                    title="Jours au frigo"
+                  />
+                  <span className="text-xs text-slate-400 font-medium">j</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">❄️</span>
+                  <input 
+                    type="number" min="1" 
+                    value={rules[cat]?.freezer ?? 90} 
+                    onChange={e => handleRuleChange(cat, 'freezer', Number(e.target.value))} 
+                    className="w-16 p-1.5 text-center text-sm font-bold text-slate-700 bg-white border border-slate-200 rounded-lg outline-none focus:border-sky-500" 
+                    title="Jours au congélo"
+                  />
+                  <span className="text-xs text-slate-400 font-medium">j</span>
+                </div>
+              </div>
+            </div>
+          )) : (
+            <p className="text-xs text-slate-400 italic">Aucune catégorie trouvée.</p>
+          )}
+        </div>
+      </div>
+
+      {/* AFFICHAGE DES ALERTES */}
       {[
         { title: '🔴 Produits périmés', items: expiredItems, color: 'border-red-200' },
-        { title: '🟠 DLC proche', items: warningItems, color: 'border-amber-200' }
+        { title: '🟠 Attention requise (Selon vos seuils)', items: warningItems, color: 'border-amber-200' }
       ].map(group => (
         <div key={group.title} className="space-y-3">
           <h2 className="font-bold text-sm uppercase tracking-wider text-slate-700">{group.title} ({group.items.length})</h2>
@@ -198,7 +285,7 @@ async function loadData() {
                           </span>
                         </div>
                       </div>
-                      <button onClick={() => deleteItem(item.id)} className="text-slate-300 hover:text-red-500 text-lg font-bold px-2">×</button>
+                      <button onClick={() => deleteItem(item.id)} className="text-slate-300 hover:text-red-500 text-base font-bold px-2" title="Supprimer ce produit">🗑️</button>
                     </div>
 
                     <div className="flex justify-between items-center mt-4 pt-3 border-t border-slate-50">
@@ -207,13 +294,15 @@ async function loadData() {
                         <span className="text-sm font-bold px-2 text-slate-800 min-w-[60px] text-center">{item.qte} {item.unite}</span>
                         <button onClick={() => updateQty(item.id, 1)} className="w-8 h-8 bg-white rounded-lg shadow-sm font-bold text-slate-700">+</button>
                       </div>
-                      <span className="font-semibold text-xs bg-slate-50 px-2 py-1 rounded-lg text-amber-600">DLC : {item.date_peremption}</span>
+                      <div className="text-right text-[11px] text-slate-400">
+                        {item.date_peremption ? <span className="font-semibold text-amber-600 block">DLC : {item.date_peremption}</span> : <span className="font-semibold text-slate-600 block">Entré le {item.date_entree}</span>}
+                      </div>
                     </div>
                   </div>
                 )
               })
             ) : (
-              <p className="col-span-full text-slate-400 text-sm italic bg-white p-4 rounded-2xl border border-slate-100">Aucun produit dans cette catégorie.</p>
+              <p className="col-span-full text-slate-400 text-sm italic bg-white p-4 rounded-2xl border border-slate-100">Aucun produit ne requiert votre attention.</p>
             )}
           </div>
         </div>

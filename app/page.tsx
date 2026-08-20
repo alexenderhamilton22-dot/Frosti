@@ -406,9 +406,10 @@ export default function HomePage() {
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl font-bold p-1">✕</button>
             </div>
             
-            {/* BOUTON SCANNER */}
+{/* BOUTON SCANNER */}
             {!editingItemId && (
               <button 
+                type="button" 
                 onClick={() => setIsScannerOpen(true)}
                 className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition"
               >

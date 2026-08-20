@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Html5QrcodeScanner } from 'html5-qrcode'
 
 interface BarcodeScannerProps {
@@ -10,34 +10,43 @@ interface BarcodeScannerProps {
 
 export default function BarcodeScanner({ onProductFound, onClose }: BarcodeScannerProps) {
   const [error, setError] = useState<string>('')
-  const [isScanning, setIsScanning] = useState(true)
+  const scannerRef = useRef<Html5QrcodeScanner | null>(null)
+  const isScanning = useRef(true)
 
   useEffect(() => {
-    // Configuration du scanner
+    // Si le scanner existe déjà, on ne le recrée pas (évite le bug React 18)
+    if (scannerRef.current) return
+
+    // On s'assure que la div "reader" est bien dans la page avant de lancer la caméra
+    const readerElement = document.getElementById("reader")
+    if (!readerElement) return
+
     const scanner = new Html5QrcodeScanner(
       "reader",
       { fps: 10, qrbox: { width: 250, height: 150 } },
       false
     )
+    scannerRef.current = scanner
 
-    // Fonction déclenchée quand un code-barres est lu
     async function onScanSuccess(decodedText: string) {
-      if (!isScanning) return
-      setIsScanning(false) // On met en pause pour ne pas scanner 10 fois de suite
-      scanner.clear() // On ferme la caméra
+      if (!isScanning.current) return
+      isScanning.current = false // Bloque les scans multiples
+      
+      try {
+        if (scannerRef.current) {
+          await scannerRef.current.clear()
+        }
+      } catch(e) { console.error(e) }
 
       try {
-        // 🌍 Appel à l'API publique et gratuite d'Open Food Facts
         const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${decodedText}.json`, {
           headers: { 'User-Agent': 'FrostiApp - Personal Inventory - Web' }
         })
         const data = await response.json()
 
         if (data.status === 1) {
-          // Produit trouvé ! On récupère le nom (en français en priorité)
           const productName = data.product.product_name_fr || data.product.product_name || "Produit inconnu"
           
-          // On tente de déduire une catégorie simple
           let category = "Divers"
           const categoriesText = (data.product.categories || "").toLowerCase()
           if (categoriesText.includes("viande") || categoriesText.includes("meat")) category = "Viande"
@@ -47,43 +56,46 @@ export default function BarcodeScanner({ onProductFound, onClose }: BarcodeScann
 
           onProductFound(productName, category)
         } else {
-          setError("Produit introuvable dans la base Open Food Facts.")
+          setError("Produit introuvable dans la base.")
           setTimeout(() => onClose(), 3000)
         }
       } catch (err) {
-        setError("Erreur de connexion à la base de données.")
+        setError("Erreur de connexion.")
         setTimeout(() => onClose(), 3000)
       }
     }
 
     function onScanFailure(error: any) {
-      // Html5Qrcode déclenche beaucoup d'erreurs "silencieuses" en cherchant un code, on les ignore
+      // On ignore les erreurs de "recherche en cours"
     }
 
     scanner.render(onScanSuccess, onScanFailure)
 
-    // Nettoyage de la caméra si on ferme le composant
     return () => {
-      scanner.clear().catch(e => console.error("Erreur nettoyage caméra", e))
+      if (scannerRef.current) {
+        scannerRef.current.clear().catch(e => console.error("Erreur nettoyage", e))
+        scannerRef.current = null
+      }
     }
-  }, [isScanning, onProductFound, onClose])
+  }, [onProductFound, onClose])
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 p-4">
-      <div className="bg-white p-4 rounded-2xl max-w-md w-full relative">
+    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/90 p-4">
+      <div className="bg-white p-4 rounded-2xl max-w-md w-full relative shadow-2xl">
         <button 
+          type="button"
           onClick={onClose}
-          className="absolute -top-3 -right-3 w-8 h-8 bg-red-500 text-white rounded-full font-bold shadow-md"
+          className="absolute -top-3 -right-3 w-10 h-10 bg-red-500 text-white rounded-full font-bold shadow-lg border-2 border-white flex items-center justify-center text-xl z-10"
         >
-          ×
+          ✕
         </button>
-        <h3 className="text-center font-bold text-slate-800 mb-4">Scanner un code-barres 📷</h3>
+        <h3 className="text-center font-bold text-slate-800 mb-4">Scanner un produit 📷</h3>
         
-        {/* C'est ici que la caméra va s'afficher */}
-        <div id="reader" className="w-full rounded-xl overflow-hidden"></div>
+        {/* La div où la caméra va s'injecter */}
+        <div id="reader" className="w-full rounded-xl overflow-hidden bg-slate-100 min-h-[250px]"></div>
         
         {error && (
-          <p className="mt-4 text-sm text-red-500 bg-red-50 p-2 rounded-lg text-center font-medium">
+          <p className="mt-4 text-sm text-red-500 bg-red-50 p-3 rounded-lg text-center font-medium border border-red-100">
             {error}
           </p>
         )}

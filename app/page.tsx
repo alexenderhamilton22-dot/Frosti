@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { createClient } from './supabase/client'
 import Footer from './components/Footer'
-import BarcodeScanner from './components/BarcodeScanner'
+import dynamic from 'next/dynamic'
+const BarcodeScanner = dynamic(() => import('./components/BarcodeScanner'), { ssr: false })
 
 const FREEZER_COLORS = [
   'bg-emerald-500 text-white shadow-emerald-500/30',
@@ -410,7 +411,10 @@ export default function HomePage() {
             {!editingItemId && (
               <button 
                 type="button" 
-                onClick={() => setIsScannerOpen(true)}
+                onClick={() => {
+  alert("Le bouton a bien été cliqué ! Lancement de la caméra...");
+  setIsScannerOpen(true);
+}}
                 className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition"
               >
                 <span>📷 Scanner un code-barres</span>

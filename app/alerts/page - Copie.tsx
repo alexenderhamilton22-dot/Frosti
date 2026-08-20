@@ -49,7 +49,13 @@ export default function AlertsPage() {
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    const userId = getCookie('congelo_user_id')
+    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+      const [key, value] = cookie.trim().split('=');
+      acc[key] = value;
+      return acc;
+    }, {} as Record<string, string>);
+
+    const userId = cookies['congelo_user_id'];
 
     // 1. Charger les équipements
     let fQuery = supabase.from('freezers').select('*').order('created_at', { ascending: true })

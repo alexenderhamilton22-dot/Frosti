@@ -40,6 +40,8 @@ export default function Navbar() {
   const handleLogout = () => {
     document.cookie = 'congelo_user_id=; path=/; max-age=0'
     document.cookie = 'congelo_username=; path=/; max-age=0'
+    localStorage.removeItem('congelo_user_id')
+    localStorage.removeItem('congelo_username')
     router.push('/login')
   }
 

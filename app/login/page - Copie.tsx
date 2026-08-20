@@ -29,12 +29,10 @@ export default function LoginPage() {
       setError('Identifiant ou mot de passe incorrect.')
       setLoading(false)
     } else {
-      // Stockage de l'ID utilisateur dans un cookie ET en localStorage (fallback mobile/PWA)
+      // Stockage simple de l'ID utilisateur dans un cookie ou le localStorage pour la session
       document.cookie = `congelo_user_id=${data.id}; path=/; max-age=86400`
       document.cookie = `congelo_username=${data.username}; path=/; max-age=86400`
-      localStorage.setItem('congelo_user_id', data.id)
-      localStorage.setItem('congelo_username', data.username)
-
+      
       router.push('/')
     }
   }

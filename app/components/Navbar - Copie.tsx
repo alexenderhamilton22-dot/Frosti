@@ -53,8 +53,8 @@ export default function Navbar() {
           <div>
             <span className="font-bold text-lg sm:text-xl text-slate-800 tracking-tight">Frosti</span>
             {/* Le sous-titre dynamique qui affiche le vrai utilisateur */}
-            <span className="block text-[9px] sm:text-[10px] text-sky-600 font-bold -mt-1 truncate max-w-[100px] sm:max-w-[150px]">
-              👤 {userName}
+            <span className="hidden sm:block text-[10px] text-sky-600 font-bold -mt-1 truncate max-w-[150px]">
+              👤 Connecté : {userName}
             </span>
           </div>
         </Link>

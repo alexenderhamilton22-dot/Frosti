@@ -36,6 +36,7 @@ export default function AlertsPage() {
   const [rules, setRules] = useState<Record<string, AlertRule>>({})
   const [ntfyInput, setNtfyInput] = useState('')
   const [isSavingRules, setIsSavingRules] = useState(false)
+  const [debugInfo, setDebugInfo] = useState<any>(null)
   
   const supabase = createClient()
 
@@ -76,10 +77,18 @@ export default function AlertsPage() {
 
     // 4. Charger les réglages Ntfy et les Règles
     if (userId) {
-      const { data: sData } = await supabase.from('user_settings').select('ntfy_topic').eq('user_id', userId)
+      const { data: sData, error: sError } = await supabase.from('user_settings').select('ntfy_topic').eq('user_id', userId)
       if (sData && sData.length > 0 && sData[0].ntfy_topic) {
         setNtfyInput(sData[0].ntfy_topic)
       }
+
+      setDebugInfo({
+        userId,
+        rawCookie: document.cookie,
+        rawLocalStorage: typeof window !== 'undefined' ? localStorage.getItem('congelo_user_id') : null,
+        sData,
+        sError: sError ? sError.message : null,
+      })
 
       const { data: rData, error: rError } = await supabase.from('alert_rules').select('*').eq('user_id', userId)
       if (!rError && rData) {
@@ -89,6 +98,14 @@ export default function AlertsPage() {
         })
         setRules(loadedRules)
       }
+    } else {
+      setDebugInfo({
+        userId: null,
+        rawCookie: document.cookie,
+        rawLocalStorage: typeof window !== 'undefined' ? localStorage.getItem('congelo_user_id') : null,
+        sData: null,
+        sError: 'userId absent — la requête user_settings n\'a même pas été lancée',
+      })
     }
   }
 
@@ -183,7 +200,19 @@ export default function AlertsPage() {
 
   return (
     <div className="space-y-6 pb-20">
-      
+
+      {/* 🐛 BANDEAU DE DEBUG TEMPORAIRE — à retirer une fois le bug résolu */}
+      {debugInfo && (
+        <div className="bg-yellow-50 border-2 border-yellow-400 rounded-2xl p-4 text-xs font-mono text-slate-800 break-all">
+          <p className="font-bold text-yellow-700 mb-2">🐛 DEBUG (à retirer après diagnostic)</p>
+          <p><span className="font-bold">userId détecté :</span> {debugInfo.userId ?? '(vide/null)'}</p>
+          <p><span className="font-bold">document.cookie brut :</span> {debugInfo.rawCookie || '(vide)'}</p>
+          <p><span className="font-bold">localStorage congelo_user_id :</span> {debugInfo.rawLocalStorage ?? '(vide/null)'}</p>
+          <p><span className="font-bold">Résultat Supabase (sData) :</span> {JSON.stringify(debugInfo.sData)}</p>
+          <p><span className="font-bold">Erreur Supabase (sError) :</span> {debugInfo.sError ?? '(aucune)'}</p>
+        </div>
+      )}
+
       {/* SECTION NTFY */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
         <h1 className="text-xl font-bold mb-4 text-slate-800">Alertes & Notifications ⚠️</h1>

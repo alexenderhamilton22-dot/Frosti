@@ -14,7 +14,14 @@ export function middleware(request: NextRequest) {
   return NextResponse.next()
 }
 
-// On applique ce vigile sur toutes les pages sauf les fichiers techniques (images, etc.)
+// On applique ce vigile sur toutes les pages sauf les fichiers techniques
+// (API, assets Next.js, favicon) ET tous les fichiers statiques du dossier
+// public (sw.js, manifest.json, icônes, images...) identifiés par leur
+// extension. Un Service Worker en particulier doit TOUJOURS rester
+// accessible sans authentification, sinon le navigateur ne peut jamais
+// l'enregistrer correctement.
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|json|js|webmanifest|txt)$).*)',
+  ],
 }

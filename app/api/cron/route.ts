@@ -82,7 +82,7 @@ export async function GET() {
         method: 'POST',
         body: `${produits.length} produit(s) requièrent votre attention : ${listText}`,
         headers: { 
-          'Title': 'Frosti - Alertes Stocks ⚠️', 
+          'Title': 'Frosti - Alertes Stocks ', 
           'Tags': 'warning,ice_cube' 
         }
       })

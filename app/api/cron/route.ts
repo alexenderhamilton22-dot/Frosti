@@ -47,17 +47,17 @@ export async function GET() {
     let requiresAttention = false
 
     if (item.date_peremption) {
-      // Cas A : Le produit a une DLC
+      // NOUVELLE LOGIQUE : Le produit a une DLC -> Alerte 30 jours avant
       const dlcTime = new Date(item.date_peremption).getTime()
       const daysLeft = Math.ceil((dlcTime - todayTime) / (1000 * 60 * 60 * 24))
-      if (daysLeft <= threshold) {
+      if (daysLeft <= 30) {
         requiresAttention = true
       }
     } else if (item.date_entree) {
-      // Cas B : Pas de DLC, calcul selon l'ancienneté (Date d'entrée)
+      // NOUVELLE LOGIQUE : Pas de DLC -> Alerte quand 80% du délai choisi est écoulé
       const entreeTime = new Date(item.date_entree).getTime()
       const ageDays = Math.floor((todayTime - entreeTime) / (1000 * 60 * 60 * 24))
-      if (ageDays >= threshold) {
+      if (ageDays >= (threshold * 0.8)) {
         requiresAttention = true
       }
     }

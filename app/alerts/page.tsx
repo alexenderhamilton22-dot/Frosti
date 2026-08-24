@@ -52,9 +52,6 @@ export default function AlertsPage() {
   async function loadData() {
     const userId = getCookie('congelo_user_id')
 
-    // 🔒 Garde-fou : si on ne peut pas identifier l'utilisateur, on ne charge
-    // surtout pas de données non filtrées (qui remonteraient celles de TOUS
-    // les utilisateurs). On affiche un état "non identifié" à la place.
     if (!userId) {
       setNotIdentified(true)
       setItems([])
@@ -66,30 +63,25 @@ export default function AlertsPage() {
     }
     setNotIdentified(false)
 
-    // 1. Charger les équipements
     let fQuery = supabase.from('freezers').select('*').order('created_at', { ascending: true })
     fQuery = fQuery.eq('user_id', userId)
     const { data: fData } = await fQuery
     if (fData) setEquipments(fData)
 
-    // 2. Charger les items
     let query = supabase.from('items').select('*').order('date_peremption', { ascending: true })
     query = query.eq('user_id', userId)
     const { data: iData } = await query
     if (iData) setItems(iData)
 
-    // 3. Charger toutes les catégories disponibles
     const { data: cData } = await supabase.from('categories').select('name').order('name')
     let allCats: string[] = []
     if (cData) allCats = cData.map(c => c.name)
-    // Au cas où des items ont des catégories supprimées, on les rajoute
     if (iData) {
       const itemCats = Array.from(new Set(iData.map(i => i.categorie)))
       allCats = Array.from(new Set([...allCats, ...itemCats]))
     }
     setCategories(allCats)
 
-    // 4. Charger les réglages Ntfy et les Règles
     const { data: sData } = await supabase.from('user_settings').select('ntfy_topic').eq('user_id', userId)
     if (sData && sData.length > 0 && sData[0].ntfy_topic) {
       setNtfyInput(sData[0].ntfy_topic)
@@ -166,32 +158,28 @@ export default function AlertsPage() {
   const freezers = equipments.filter(e => !e.is_fridge)
   const fridges = equipments.filter(e => e.is_fridge)
 
-  // 🔴 Périmés = date_peremption dépassée par rapport à aujourd'hui
   const expiredItems = items.filter(i => i.date_peremption && i.date_peremption < today)
   
-  // 🟠 Alertes personnalisées
   const warningItems = items.filter(i => {
-    // Si déjà périmé, il est dans expiredItems, on l'ignore ici
     if (i.date_peremption && i.date_peremption < today) return false
     
     const eq = equipments.find(e => String(e.id) === String(i.congelo_id))
     const isFridge = eq?.is_fridge
     
-    // Récupération de la règle (ou valeur par défaut 7 / 90)
     const rule = rules[i.categorie] || { fridge: 7, freezer: 90 }
     const threshold = isFridge ? rule.fridge : rule.freezer
 
+    // --- NOUVELLE LOGIQUE FROSTI ---
     if (i.date_peremption) {
-      // Alerte basée sur la DLC (ex: il reste 5 jours et le seuil est à 7)
       const diffTime = new Date(i.date_peremption).getTime() - new Date(today).getTime()
       const daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-      return daysLeft <= threshold
-    } else {
-      // Alerte basée sur l'âge (Date d'entrée) si aucune DLC (ex: dans le congélo depuis 95 jours pour un seuil à 90)
+      return daysLeft <= 30 // Alerte 30 jours avant la DLC
+    } else if (i.date_entree) {
       const diffTime = new Date(today).getTime() - new Date(i.date_entree).getTime()
       const ageDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
-      return ageDays >= threshold
+      return ageDays >= (threshold * 0.8) // Alerte à 80% du temps
     }
+    return false
   })
 
   return (
@@ -204,16 +192,12 @@ export default function AlertsPage() {
           <p className="text-sm text-slate-500">
             Impossible de vérifier ta session. Reconnecte-toi pour voir tes alertes.
           </p>
-          <a
-            href="/login"
-            className="inline-block mt-4 bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold px-5 py-2 rounded-lg transition"
-          >
+          <a href="/login" className="inline-block mt-4 bg-sky-500 hover:bg-sky-600 text-white text-sm font-bold px-5 py-2 rounded-lg transition">
             Se reconnecter
           </a>
         </div>
       ) : (
       <>
-      {/* SECTION NTFY */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
         <h1 className="text-xl font-bold mb-4 text-slate-800">Alertes & Notifications ⚠️</h1>
         <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
@@ -225,17 +209,26 @@ export default function AlertsPage() {
         </div>
       </div>
 
-      {/* SECTION REGLAGES DES SEUILS */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Mes seuils d'alerte personnalisés</h2>
+        <div className="flex justify-between items-start mb-4">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mt-2">Mes seuils d'alerte personnalisés</h2>
           <button onClick={saveAlertRules} disabled={isSavingRules} className="bg-teal-500 hover:bg-teal-600 text-white text-xs px-4 py-2 rounded-lg font-bold transition shadow-sm disabled:opacity-50">
             {isSavingRules ? '⏳...' : '💾 Sauvegarder'}
           </button>
         </div>
-        <p className="text-xs text-slate-400 mb-4">
-          Délai avant DLC, ou durée de présence si pas de DLC. Par défaut : <span className="font-bold text-sky-500">7j</span> au frigo, <span className="font-bold text-sky-500">90j</span> au congélo.
-        </p>
+        
+        {/* ENCART EXPLICATIF */}
+        <div className="text-sm text-slate-600 mb-4 bg-sky-50 p-4 rounded-xl border border-sky-100 shadow-inner">
+          <p className="font-bold text-sky-800 mb-2">Comment fonctionnent vos alertes ?</p>
+          <ul className="space-y-1 ml-2">
+            <li>🎯 <span className="font-semibold">Si DLC renseignée :</span> Alerte 30 jours avant la date.</li>
+            <li>⏳ <span className="font-semibold">Sans DLC :</span> Alerte quand 80% du délai choisi ci-dessous est écoulé.</li>
+          </ul>
+          <p className="text-xs text-slate-400 mt-3 border-t border-sky-200 pt-2">
+            Par défaut : <span className="font-bold text-sky-500">7j (Frigo)</span>, 
+            <span className="font-bold text-sky-500"> 90j (Congélateur)</span>.
+          </p>
+        </div>
 
         <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
           {categories.length > 0 ? categories.map(cat => (
@@ -272,7 +265,6 @@ export default function AlertsPage() {
         </div>
       </div>
 
-      {/* AFFICHAGE DES ALERTES */}
       {[
         { title: '🔴 Produits périmés', items: expiredItems, color: 'border-red-200' },
         { title: '🟠 Attention requise (Selon vos seuils)', items: warningItems, color: 'border-amber-200' }

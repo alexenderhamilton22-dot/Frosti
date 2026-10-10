@@ -1,98 +1,99 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-export async function GET() {
-  // Connexion côté serveur (nécessite le Service Role Key ou Anon Key)
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-
-  // 1. Récupération de toutes les données nécessaires en parallèle pour aller vite
-  const [
-    { data: items },
-    { data: freezers },
-    { data: rules },
-    { data: settings }
-  ] = await Promise.all([
-    supabase.from('items').select('*'),
-    supabase.from('freezers').select('id, is_fridge'),
-    supabase.from('alert_rules').select('*'),
-    supabase.from('user_settings').select('*')
-  ])
-
-  if (!items || items.length === 0) {
-    return NextResponse.json({ success: true, message: "Aucun produit en base." })
+import {
+  ApiError,
+  db,
+  databaseError,
+  failure,
+  json,
+  rows,
+} from "../../lib/server";
+import { secureEqual } from "../../lib/session";
+import { alertFor, localDay } from "../../lib/alerts";
+import { Equipment, Item, Rule, Settings } from "../../lib/types";
+import { notify } from "../../lib/notifications";
+export const maxDuration = 60;
+export async function GET(request: Request) {
+  try {
+    const secret = process.env.CRON_SECRET;
+    if (
+      !secret ||
+      !secureEqual(
+        request.headers.get("authorization") ?? "",
+        `Bearer ${secret}`,
+      )
+    )
+      throw new ApiError("Accès refusé.", 401);
+    const [allItems, equipments, rules, settings] = await Promise.all([
+      rows<Item>("items"),
+      rows<Equipment>("freezers"),
+      rows<Rule & { user_id: string }>("alert_rules"),
+      rows<Settings & { user_id: string }>("user_settings"),
+    ]);
+    let sent = 0,
+      failed = 0,
+      skipped = 0;
+    const day = localDay();
+    // Each household is isolated; one failed notification does not stop others.
+    const candidates = settings.filter((s) => s.ntfy_topic);
+    for (let offset = 0; offset < candidates.length; offset += 5) {
+      await Promise.all(
+        candidates.slice(offset, offset + 5).map(async (settings) => {
+          const ownedItems = allItems.filter(
+            (i) => i.user_id === settings.user_id,
+          );
+          const ownedEquipment = equipments.filter(
+            (e) => e.user_id === settings.user_id,
+          );
+          const ownedRules = rules.filter(
+            (r) => r.user_id === settings.user_id,
+          );
+          const attention = ownedItems.filter((i) =>
+            alertFor(i, ownedEquipment, ownedRules, settings, day),
+          );
+          if (!attention.length) return;
+          const { error: claimError } = await db()
+            .from("frosti_notification_runs")
+            .insert({ user_id: settings.user_id, day, status: "processing" });
+          if (claimError) {
+            if (claimError.code === "23505") {
+              skipped++;
+              return;
+            }
+            throw databaseError(claimError);
+          }
+          try {
+            await notify(
+              settings.ntfy_topic!,
+              `${attention.length} lot(s) à vérifier : ${attention
+                .slice(0, 10)
+                .map(
+                  (i) =>
+                    `${i.produit} (${alertFor(i, ownedEquipment, ownedRules, settings, day)?.label})`,
+                )
+                .join(", ")}${attention.length > 10 ? "…" : ""}`,
+            );
+            const { error } = await db()
+              .from("frosti_notification_runs")
+              .update({ status: "sent", sent_at: new Date().toISOString() })
+              .eq("user_id", settings.user_id)
+              .eq("day", day);
+            if (error) throw databaseError(error);
+            sent++;
+          } catch (error) {
+            failed++;
+            await db()
+              .from("frosti_notification_runs")
+              .update({
+                status: "failed",
+                error: error instanceof Error ? error.message : "Échec",
+              })
+              .eq("user_id", settings.user_id)
+              .eq("day", day);
+          }
+        }),
+      );
+    }
+    return json({ sent, failed, skipped }, failed ? 502 : 200);
+  } catch (error) {
+    return failure(error);
   }
-
-  // 2. Préparation des dictionnaires pour des recherches instantanées
-  const eqMap = new Map(freezers?.map(f => [String(f.id), f.is_fridge]))
-  const ruleMap = new Map(rules?.map(r => [`${r.user_id}_${r.categorie}`, { fridge: r.fridge_days, freezer: r.freezer_days }]))
-  const settingsMap = new Map(settings?.map(s => [s.user_id, s.ntfy_topic]))
-
-  const today = new Date().toISOString().slice(0, 10)
-  const todayTime = new Date(today).getTime()
-
-  // On va stocker la liste des alertes par utilisateur
-  const alertesParUser: Record<string, string[]> = {}
-
-  // 3. Analyse de chaque produit
-  items.forEach(item => {
-    const isFridge = eqMap.get(String(item.congelo_id)) ?? false
-    const userRule = ruleMap.get(`${item.user_id}_${item.categorie}`)
-    
-    // Application du seuil (règle personnalisée OU règle par défaut)
-    const threshold = isFridge ? (userRule?.fridge ?? 7) : (userRule?.freezer ?? 90)
-
-    let requiresAttention = false
-
-    if (item.date_peremption) {
-      // NOUVELLE LOGIQUE : Le produit a une DLC -> Alerte 30 jours avant
-      const dlcTime = new Date(item.date_peremption).getTime()
-      const daysLeft = Math.ceil((dlcTime - todayTime) / (1000 * 60 * 60 * 24))
-      if (daysLeft <= 30) {
-        requiresAttention = true
-      }
-    } else if (item.date_entree) {
-      // NOUVELLE LOGIQUE : Pas de DLC -> Alerte quand 80% du délai choisi est écoulé
-      const entreeTime = new Date(item.date_entree).getTime()
-      const ageDays = Math.floor((todayTime - entreeTime) / (1000 * 60 * 60 * 24))
-      if (ageDays >= (threshold * 0.8)) {
-        requiresAttention = true
-      }
-    }
-
-    if (requiresAttention) {
-      if (!alertesParUser[item.user_id]) alertesParUser[item.user_id] = []
-      alertesParUser[item.user_id].push(`${item.produit} (${item.categorie})`)
-    }
-  })
-
-  let envois = 0
-
-  // 4. Envoi des notifications via Ntfy
-  for (const [userId, produits] of Object.entries(alertesParUser)) {
-    const topic = settingsMap.get(userId)
-    
-    if (topic) {
-      // Si on a plus de 10 produits en alerte, on tronque la liste pour que la notification reste lisible
-      const listText = produits.slice(0, 10).join(', ') + (produits.length > 10 ? `... et ${produits.length - 10} autres` : '')
-      
-      await fetch(`https://ntfy.sh/${topic}`, {
-        method: 'POST',
-        body: `${produits.length} produit(s) requièrent votre attention : ${listText}`,
-        headers: { 
-          'Title': 'Frosti - Alertes Stocks ', 
-          'Tags': 'warning,ice_cube' 
-        }
-      })
-      envois++
-    }
-  }
-
-  return NextResponse.json({ 
-    success: true, 
-    users_notifies: Object.keys(alertesParUser).length, 
-    notifications_envoyees: envois 
-  })
 }

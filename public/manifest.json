@@ -1,11 +1,11 @@
 {
-  "name": "Frosti - Gestion de stock",
+  "name": "Frosti — Stocks du foyer",
   "short_name": "Frosti",
   "description": "Gérez vos congélateurs et frigos simplement pour éviter le gaspillage.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#0ea5e9",
+  "background_color": "#f4f6f1",
+  "theme_color": "#145b52",
   "icons": [
     {
       "src": "/icon-192.png",

@@ -1,0 +1,112 @@
+# Frosti V1.2 — Stocks du foyer
+
+Cette version conserve les tables et champs lus par Mealio, le nom du foyer et ses identifiants. Elle remplace les requêtes depuis le navigateur par des routes serveur qui vérifient le foyer. Les mouvements de Frosti sont transactionnels, journalisés et protégés contre les doubles soumissions.
+
+## Mise à jour depuis V1.1
+
+1. Arrêter le serveur et sauvegarder le projet et la base.
+2. Exécuter `migrations/005_frosti_v1_2.sql` dans Supabase Frosti. Les migrations 001 et 004 doivent déjà être appliquées. Ne pas les rejouer après 005.
+3. Remplacer les sources avec le ZIP V1.2 en conservant `.env.local` et la configuration Git/Vercel. Puis `npm ci`, `npm run verify`, `npm run dev`.
+4. Vérifier le numéro V1.2, le bouton d'ajout en haut et en bas, un transfert vers un lot identique, puis son annulation.
+
+Le bouton **+ Ajouter un équipement** situé au-dessus de la liste ouvre le formulaire sans devoir descendre. Le formulaire initial reste disponible en bas.
+
+Les transferts individuels et groupés additionnent la quantité à un lot déjà présent dans la destination si produit, catégorie, unité, date d'entrée, date limite, type de date et notes sont strictement identiques. Les UUID, versions et dates techniques de création ne font pas partie de cette identité. Les différences de marque dans les notes (Mars/Magnum/Snickers) ou de dates maintiennent des lots séparés. En l'absence de correspondance, le transfert conserve son comportement habituel.
+
+Pour les doublons déjà présents : **Autres actions → Regrouper avec un lot identique → Confirmer le regroupement**. Par exemple, les deux lots Mars de 2 et 4 pièces deviennent un seul de 6 pièces, si tous les champs ci-dessus correspondent. Un regroupement rapproche deux lots à la fois, conserve le lot de destination, journalise les deux changements et peut être annulé tant qu'ils n'ont pas été modifiés. Aucun doublon n'est fusionné automatiquement pendant la migration.
+
+## Mise à jour depuis V1.0
+
+1. Arrêter le serveur local et sauvegarder le projet et la base.
+2. Dans Supabase Frosti, exécuter `migrations/004_frosti_v1_1.sql`, puis `migrations/005_frosti_v1_2.sql` si la migration 001 est déjà appliquée. Ne pas rejouer 001 ou 004 après 005 : elles rétabliraient d’anciennes versions des fonctions.
+3. Remplacer les sources par le ZIP V1.2, en conservant `.env.local`, la configuration Git et Vercel. Ne pas utiliser les anciennes copies du dossier `app`.
+4. Exécuter `npm ci`, puis `npm run verify`, puis `npm run dev`. La version visible doit être V1.2.
+5. Tester les équipements, un transfert groupé, les règles de dates et le canal Ntfy. Après déploiement Vercel, vérifier les variables et le cron.
+
+## Trouver les nouvelles fonctions
+
+- **Stocks → Équipements** : créer, renommer, supprimer. La suppression exige un équipement complètement vide et sans référence dans les règles de rangement de Mealio. Aucun contenu n'est supprimé en cascade par cette action.
+- **Stocks → Transférer des produits** : choisir source et destination, sélectionner de 1 à 100 lots et leurs quantités. La date d'entrée, la date limite ou indicative et les notes sont conservées ; changer de type de stockage ne recalcule pas les dates. Le groupe entier est atomique et annulable depuis Historique tant que les lots et lieux nécessaires n'ont pas changé.
+- **Réglages → Notifications** : saisir un canal ou générer et enregistrer un nom aléatoire. Ce bouton choisit un identifiant ; il ne réserve pas un canal privé sur ntfy.sh. Ouvrir le lien ou s'abonner dans l'app Ntfy (serveur `ntfy.sh`, même nom), puis envoyer un test. Remplacer un canal demande de réabonner les membres du foyer. Documentation : https://docs.ntfy.sh/subscribe/web/ et https://docs.ntfy.sh/subscribe/api/.
+- **Réglages → Dates et délais** : par catégorie et type de stockage, régler séparément le rappel sans date et le nombre de jours pour une date indicative par défaut. Une case cochée à l'ajout propose la date calculée depuis la date d'entrée ; décochez-la pour rester sans date. Une date d'emballage saisie est toujours prioritaire. Modifier les règles n'altère pas les dates des lots existants. Les durées sont des paramètres du foyer, pas des recommandations sanitaires de DLC.
+
+Les clés `sb_secret_…` de Supabase peuvent être utilisées dans `SUPABASE_SERVICE_ROLE_KEY`. Définir aussi `SUPABASE_URL`, `FROSTI_SESSION_SECRET` (au moins 32 caractères), `CRON_SECRET` et, pour les liens des notifications, `FROSTI_PUBLIC_URL`. Le fichier `.env.local` sert au PC ; configurer les mêmes variables dans Vercel puis redéployer. Le cron ne tourne pas automatiquement en local.
+
+## Première installation : ordre important
+
+1. Conserver une sauvegarde de la base et de l’ancien projet. Ne pas copier un `.env` dans le ZIP ni dans Git.
+2. Exécuter `migrations/000_preflight.sql` dans le SQL Editor de **la base Frosti**. Ce script ne fait que lire. Examiner toute ligne retournée : lot sans foyer, emplacement incohérent, quantité négative, destination de règle appartenant à un autre foyer, délai d’alerte invalide. Corriger après avoir identifié le bon foyer et emplacement ; aucune suppression ou attribution automatique n’est prévue.
+3. Exécuter `migrations/001_frosti_v1_0.sql`. Migration additive : ajoute version des lots, archivage des équipements, anticipation des alertes, journal des mouvements, opérations idempotentes et tables techniques. Elle ne modifie ni les UUID, ni les libellés, ni les mots de passe. Les nouveaux contrôles sont `NOT VALID` pour ne pas effacer de données anciennes ; ils s’appliquent aux nouvelles écritures. Le trigger de journal commence maintenant : il ne reconstruit pas l’historique passé.
+4. Exécuter ensuite `migrations/004_frosti_v1_1.sql`, puis `migrations/005_frosti_v1_2.sql`, puis remplacer les sources par ce projet. **Supprimer l’ancien `middleware.ts`**, les fichiers `*Copie*`, `app/supabase`, `utils/supabase`, `Header.tsx`, `Footer.tsx` et `InstallPrompt.tsx`. Le ZIP ne les contient plus ; extraire par-dessus un dossier ne supprime pas les anciens fichiers. Conserver vos fichiers d’environnement et la configuration Git/Vercel locale.
+5. Définir les variables de `.env.example` localement et sur Vercel : `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `FROSTI_SESSION_SECRET`, `CRON_SECRET`, et éventuellement `FROSTI_PUBLIC_URL`. La clé de service reste exclusivement côté serveur. Les variables `NEXT_PUBLIC_SUPABASE_*` ne sont plus nécessaires ; `NEXT_PUBLIC_SUPABASE_URL` reste un fallback pour faciliter la transition.
+6. Utiliser Node 22.13+ ou 24, puis `npm ci`, `npm run verify`. En local : `npm run dev`. Sur Vercel, déployer avec les variables serveur définies.
+7. Tester connexion, ajout, retrait partiel, déplacement, historique, inventaire, réglages et notification de test. Les anciens cookies ne permettent plus de se connecter : reconnectez le foyer une première fois. Le compte et le mot de passe habituels restent valables.
+8. Exécuter **seulement ensuite** `migrations/002_close_public_access.sql`. Les tables deviennent inaccessibles à `anon` et `authenticated`. Les routes serveur et Mealio gardent leur accès `service_role`. Tester également les lectures, rangement, inventaire et consommation de Mealio avec un lot d’essai.
+9. Une fois les anciennes données corrigées, exécuter éventuellement `migrations/003_validate_after_cleanup.sql` pour valider les contraintes sur tout l’historique courant.
+
+Ne pas exécuter 002 avant le déploiement : Frosti ancien interroge les tables directement depuis le navigateur et cesserait de fonctionner. Ne pas revenir au ancien code après 002 sans préparer sa propre adaptation serveur. La marche normale de retour est de conserver l’accès protégé et de corriger V1.0 ; ne pas rouvrir les tables contenant les mots de passe.
+
+## Changements et utilisation
+
+### Stocks
+
+La page d’accueil affiche directement le stock et sa recherche. La recherche ignore la casse et les accents, et porte sur le produit et ses notes. Choisir un équipement, ouvrir Filtres pour la catégorie, le tri ou une période. Le dernier équipement choisi est mémorisé localement pour le foyer ; les données de stock et mots de passe ne sont pas enregistrés dans localStorage.
+
+« Ajouter un produit » reste accessible en bas de l’écran. Commencer par le nom : les produits déjà présents et les modèles sont proposés. La catégorie et l’unité peuvent être suggérées, mais les libellés libres restent possibles pour conserver la compatibilité avec les articles de Mealio. Saisir une quantité décimale, vérifier la destination, puis Enregistrer. « Ajouter un autre produit ensuite » conserve le formulaire pour ranger plusieurs achats.
+
+Les nouveaux libellés ne créent pas automatiquement une catégorie ou un modèle global : le lot garde ses textes, disponibles ensuite dans les suggestions et les délais d’alerte du foyer. Cela évite de polluer le référentiel commun ou de créer des doublons lors d’une erreur d’enregistrement. Les tables de catégories et modèles existantes restent lues.
+
+« Utiliser » retire la quantité choisie, pas systématiquement 1 kg ou 1 L. « Tout le lot » utilise le solde entier. « Jeter / retirer » crée un mouvement distinct de consommation. Un lot épuisé quitte `items`, comme auparavant ; ses données restent dans le journal et peuvent être restaurées par annulation.
+
+Le menu propose Modifier, Déplacer et Nouvel achat similaire. Un nouvel achat similaire reprend le produit, la catégorie, la quantité et l’unité, avec la date d’entrée du jour et sans ancienne date limite ou note. Déplacer conserve les dates et notes. Déplacer une partie crée un lot dans la destination et réduit le lot d’origine dans la même transaction. Le bouton « Tout le lot » déplace le lot existant.
+
+La modification d’un lot inclut sa version : si un autre appareil l’a changé depuis l’ouverture du formulaire, l’enregistrement est refusé. Recharger puis reprendre la correction. Une erreur conserve la saisie. Une nouvelle tentative avec la même demande réutilise son identifiant et ne crée pas une deuxième opération. Ne pas modifier une demande d’ajout après un résultat réseau incertain sans vérifier le stock ; après fermeture/rechargement du formulaire, l’identifiant local n’est pas conservé.
+
+### À utiliser
+
+Les produits arrivent avant les réglages. Date limite dépassée, date proche et rappel d’ancienneté sont expliqués séparément. L’anticipation par défaut est désormais de 3 jours, modifiable de 0 à 90 jours dans Réglages. Sans date, le rappel commence au délai exact de la catégorie : 7 jours au frigo et 90 au congélateur par défaut. Le calcul est partagé avec le cron et utilise la date Europe/Paris.
+
+Cette livraison conserve `date_peremption` comme date limite unique, sans migration en DLC/DDM/date personnelle. Le texte ne déclare pas automatiquement un produit impropre à la consommation et un délai d’ancienneté reste un rappel de gestion.
+
+### Réglages
+
+Création d’un frigo/congélateur et renommage. L’archivage garde l’équipement, ses règles et le journal, et exige que son contenu soit vide. Réactivation possible. **Avant d’utiliser l’archivage en production, adapter les listes de destinations de Mealio pour exclure `archived_at IS NOT NULL`.** Les écritures vers un équipement archivé sont refusées en base ; les anciennes règles pointant dessus doivent être réaffectées dans Mealio. Pour une première installation sans adaptation de Mealio, ne pas archiver d’équipement. La création et le renommage restent compatibles. Pour éviter une manipulation prématurée, l’archivage est désactivé par défaut dans les écrans et l’API. Définir `FROSTI_ENABLE_ARCHIVE=true` seulement après cette adaptation de Mealio. La réactivation d’un équipement déjà archivé reste possible.
+
+Délais d’alertes par catégorie, anticipation d’une date et canal Ntfy. Enregistrer le canal avant le bouton de test. Les réglages saisis ne sont pas remplacés par un rafraîchissement du stock tant que la page reste ouverte. Les règles de rangement `storage_defaults` et `storage_routing_rules` restent gérées par Mealio ; Frosti ne les modifie pas.
+
+### Historique
+
+Accessible depuis Stocks et Réglages. Il contient les mouvements de Frosti **et les INSERT/UPDATE/DELETE directs des autres applications**, à partir de la migration 001. « Mealio / externe » signifie une écriture directe non étiquetée ; le trigger ne peut pas déduire si l’écriture vient effectivement de Mealio ou du SQL Editor.
+
+Filtrer par dates, puis rechercher dans les mouvements chargés. Les lignes arrivent par pages de 100 : « Charger les 100 suivants » étend la recherche. Un transfert partiel a deux lignes, mais chacune permet d’annuler toute l’opération, pas une moitié. Un mouvement annulé reste visible, ainsi que l’annulation. Une annulation n’est pas elle-même annulable.
+
+L’annulation compare l’état courant au résultat du mouvement et ne fait rien si le lot a changé depuis. Elle restaure les quantités, libellés, dates, notes et emplacement. La destination d’origine doit encore exister et être active. Cette fonctionnalité restaure le **stock Frosti seulement** : annuler une écriture de Mealio ne modifie pas sa liste de courses, son journal ou son planning. Vérifier ces éléments dans Mealio si l’opération venait de cette application.
+
+### Inventaire
+
+Accessible depuis Stocks et Réglages. Saisir la quantité réelle d’un lot puis Corriger. Chaque correction possède son journal et sa version ; les autres lignes ne changent pas. Zéro retire le lot courant ; l’historique permet de restaurer la correction. Cette version ne prétend pas sauvegarder tout un inventaire multi-lots en une seule transaction.
+
+### Installation et réseau
+
+Frosti reste installable via le navigateur ou « Partager → Sur l’écran d’accueil » sur iPhone. Le service worker V1.0 purge les anciens caches Frosti, y compris ceux qui pouvaient contenir des réponses Supabase. Aucune donnée privée n’est désormais mise en cache. Si l’app reste ouverte lors d’une coupure, elle signale que la vue peut être ancienne et bloque les mutations ; elle ne garantit pas une ouverture à froid hors connexion.
+
+## Authentification familiale
+
+Connexion par nom de foyer et mot de passe habituel. Cookie de session HttpOnly, Secure en production, SameSite Strict, signé avec HMAC et expirant au bout de 30 jours. Vérification de la session et de l’existence du foyer sur chaque route ; le changement du mot de passe existant invalide les sessions grâce à une empreinte HMAC. Les mutations vérifient l’origine. La connexion est limitée à 10 essais en 15 minutes par foyer et par adresse ; la table est commune aux instances serveur.
+
+Le champ `app_users.password` reste en clair **pour préserver la connexion existante de Mealio**. Le navigateur de Frosti ne le lit plus et la migration 002 retire les droits publics. Une migration coordonnée vers un hash reste à réaliser dans les applications qui vérifient ce champ. Cette version ne prétend donc pas avoir supprimé le stockage historique en clair. Changer `FROSTI_SESSION_SECRET` invalide toutes les sessions ; la déconnexion efface le cookie local, sans registre de révocation individuel.
+
+## Notifications quotidiennes
+
+Vercel appelle `/api/cron` selon `vercel.json`, à 07:00 UTC, donc heure locale différente selon la saison. Le serveur contrôle `Authorization: Bearer CRON_SECRET`. Les erreurs SQL sont remontées ; chaque foyer est isolé ; la réponse Ntfy est vérifiée avec délai maximal de 10 secondes.
+
+Une réservation par foyer/date évite deux envois lors de deux appels concurrents ou répétés. Les états sont `processing`, `sent`, `failed` dans `frosti_notification_runs`. Un échec n’est pas réessayé automatiquement le même jour pour éviter les doublons quand Ntfy a accepté l’envoi mais que la réponse réseau a été perdue. Le lendemain utilise une nouvelle réservation ; le bouton de test reste indépendant. En cas de panne, examiner `status` et `error`. À grande échelle, ce traitement devra devenir un worker paginé ; il vise ici l’application familiale.
+
+## Vérifications
+
+- `npm ci` : installation avec lockfile.
+- `npm run test` : session, dates Paris et PostgreSQL embarqué PGlite. Les tests utilisent les véritables migrations sur une base éphémère correspondant au schéma transmis. Ils ne touchent pas Supabase.
+- `npm run typecheck`, `npm run lint`, `npm run build`.
+- Contrôle UI optionnel : installer Chromium avec `npx playwright install chromium`, construire avec `npm run build`, puis exécuter `node scripts/check-ui.mjs`. Le script démarre et arrête son propre serveur de test sur le port 3100 avec un secret de test. Cette recette simule les réponses des API pour les écrans ; les tests SQL vérifient séparément les opérations réelles. Les captures sont enregistrées dans `../qa`.
+
+Il reste indispensable de faire la recette avec la base réelle et Mealio après installation : aucune clé de production n’a été utilisée pour créer cette livraison.

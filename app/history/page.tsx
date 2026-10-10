@@ -170,7 +170,8 @@ function Content() {
               <span className="status">Annulé</span>
             ) : (
               m.kind !== "undo" &&
-              m.origin !== "maintenance" && (
+              m.origin !== "maintenance" &&
+              (m.origin !== "mealio" || m.kind === "inventory") && (
                 <button
                   className="quiet"
                   disabled={busy}

@@ -62,6 +62,7 @@ export async function POST(request: Request) {
     }
     const payload: Record<string, unknown> = {};
     if (action === "add" || action === "edit") {
+      payload.apply_default_expiry = action === "add";
       payload.produit = textValue(input.produit, "Produit");
       payload.categorie = textValue(input.categorie, "Catégorie");
       payload.unite = textValue(input.unite, "Unité", 60);
@@ -77,6 +78,46 @@ export async function POST(request: Request) {
       )
         throw new ApiError("Type de date invalide.");
       payload.date_kind = input.date_kind ?? "declared";
+      payload.ingredient_id = input.ingredient_id
+        ? uuid(input.ingredient_id)
+        : null;
+      if (payload.ingredient_id) {
+        const { data: ingredient, error } = await db()
+          .from("ingredient_catalog")
+          .select("name")
+          .eq("id", payload.ingredient_id)
+          .maybeSingle();
+        if (error) throw databaseError(error);
+        if (!ingredient)
+          throw new ApiError(
+            "Actualisez le référentiel avant d’associer cet ingrédient.",
+          );
+        payload.ingredient_name = ingredient.name;
+      } else payload.ingredient_name = null;
+      payload.content_quantity =
+        input.content_quantity == null || input.content_quantity === ""
+          ? null
+          : numberValue(input.content_quantity, Number.MIN_VALUE);
+      payload.content_unit =
+        payload.content_quantity == null
+          ? null
+          : textValue(input.content_unit, "Unité du contenu", 20);
+      if (
+        payload.content_unit &&
+        !["g", "mL", "pièce(s)"].includes(String(payload.content_unit))
+      )
+        throw new ApiError("Unité du contenu invalide.");
+      for (const [key, allowed] of Object.entries({
+        product_type: ["food", "beverage", "wine"],
+        preparation_origin: ["bought", "homemade"],
+        date_role: ["unknown", "dlc", "ddm", "apogee", "indicative"],
+      })) {
+        const value = input[key] ?? (key === "date_role" ? "unknown" : null);
+        if (value !== null && !allowed.includes(String(value)))
+          throw new ApiError("Classification invalide.");
+        payload[key] = value;
+      }
+      payload.date_fabrication = dateValue(input.date_fabrication);
       payload.notes = textValue(input.notes, "Notes", 2000, true);
     }
     if (action === "add" || action === "transfer")

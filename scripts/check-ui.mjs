@@ -127,6 +127,7 @@ try {
         freezer_default_days: 30,
       },
     ],
+    ingredients: [{id,name:"Lait entier"}],
     settings: { ntfy_topic: "frosti-test-preview", dlc_warning_days: 3 },
     synchronizedAt: new Date().toISOString(),
   };
@@ -468,6 +469,23 @@ try {
     .click();
   await page.waitForFunction(() => document.querySelector(".toast"));
   assert.equal(changes.at(-1).action, "inventory");
+  await page.goto(base);
+  await page.getByRole("button",{name:"Ajouter un produit",exact:false}).click();
+  await page.getByLabel("Produit",{exact:true}).fill("Pots test");
+  await page.getByLabel("Catégorie",{exact:true}).fill("Épicerie");
+  await page.getByLabel("Quantité",{exact:true}).fill("4");
+  await page.getByLabel("Unité",{exact:true}).fill("pot(s)");
+  await page.getByText("Ingrédient et contenu du contenant",{exact:true}).click();
+  await page.getByLabel("Ingrédient officiel (facultatif)").selectOption(id);
+  await page.getByLabel("Contenu par unité de stock (facultatif)",{exact:true}).fill("250");
+  await page.getByLabel("Unité du contenu").selectOption("mL");
+  await page.getByText("Nature du produit et rôle de la date",{exact:true}).click();
+  await page.locator("dialog").getByLabel("Nature").selectOption("food");
+  await page.getByLabel("Origine").last().selectOption("homemade");
+  await page.screenshot({path:"../qa/ecosystem-add-mobile.png",fullPage:true});
+  await page.getByRole("button",{name:"Enregistrer",exact:true}).click();
+  await page.locator("dialog").waitFor({state:"detached"});
+  assert.equal(changes.at(-1).ingredient_id,id);assert.equal(changes.at(-1).content_quantity,250);assert.equal(changes.at(-1).content_unit,"mL");assert.equal(changes.at(-1).product_type,"food");assert.equal(changes.at(-1).preparation_origin,"homemade");
   assert.equal(errors.length, 0, errors.join("\n"));
   console.log(
     "UI OK: responsive screens, auth/CSRF, estimated dates, batch transfer + retry, duplicate regrouping, equipment creation from top and bottom/deletion, Ntfy channel generation, category settings, inventory and history; no client errors.",

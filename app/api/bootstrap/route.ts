@@ -10,15 +10,23 @@ import {
 export async function GET() {
   try {
     const household = await user();
-    const [items, equipments, categories, templates, rules, settings] =
-      await Promise.all([
-        rows<Item>("items", household.id),
-        rows<Equipment>("freezers", household.id),
-        rows<Category>("categories"),
-        rows<Template>("product_templates"),
-        rows<Rule>("alert_rules", household.id),
-        rows<Settings>("user_settings", household.id),
-      ]);
+    const [
+      items,
+      equipments,
+      categories,
+      templates,
+      rules,
+      settings,
+      ingredients,
+    ] = await Promise.all([
+      rows<Item>("items", household.id),
+      rows<Equipment>("freezers", household.id),
+      rows<Category>("categories"),
+      rows<Template>("product_templates"),
+      rows<Rule>("alert_rules", household.id),
+      rows<Settings>("user_settings", household.id),
+      rows<{ id: string; name: string }>("ingredient_catalog"),
+    ]);
     return json({
       username: household.username,
       archive_enabled: process.env.FROSTI_ENABLE_ARCHIVE === "true",
@@ -31,6 +39,7 @@ export async function GET() {
       categories,
       templates,
       rules,
+      ingredients,
       settings: settings[0] ?? { ntfy_topic: null, dlc_warning_days: 3 },
       synchronizedAt: new Date().toISOString(),
     });

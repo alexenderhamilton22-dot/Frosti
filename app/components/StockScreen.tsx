@@ -6,7 +6,14 @@ import Dialog from "./Dialog";
 import EquipmentIcon from "./EquipmentIcon";
 import TransferDialog from "./TransferDialog";
 import { Item } from "../lib/types";
-import { alertFor, defaultExpiry, localDay, normalize } from "../lib/alerts";
+import {
+  alertFor,
+  defaultExpiry,
+  localDay,
+  normalize,
+  dateLabelFor,
+  contentTotal,
+} from "../lib/alerts";
 const units = [
   "pièce(s)",
   "portion(s)",
@@ -43,6 +50,9 @@ function StockContent({ mode }: { mode: Mode }) {
     [equipment, setEquipment] = useState(""),
     [category, setCategory] = useState(""),
     [sort, setSort] = useState(mode === "alerts" ? "urgent" : "name"),
+    [unassociated, setUnassociated] = useState(false),
+    [nature, setNature] = useState(""),
+    [originFilter, setOriginFilter] = useState(""),
     [advanced, setAdvanced] = useState(false),
     [from, setFrom] = useState(""),
     [until, setUntil] = useState(""),
@@ -88,6 +98,10 @@ function StockContent({ mode }: { mode: Mode }) {
         !alertFor(i, stock.equipments, stock.rules, stock.settings)
       )
         return false;
+      if (unassociated && i.ingredient_id) return false;
+      if (nature && (i.product_type ?? "unknown") !== nature) return false;
+      if (originFilter && (i.preparation_origin ?? "unknown") !== originFilter)
+        return false;
       if (equipment && i.congelo_id !== equipment) return false;
       if (category && i.categorie !== category) return false;
       if (
@@ -124,6 +138,9 @@ function StockContent({ mode }: { mode: Mode }) {
     });
   const clear = () => {
     setSearch("");
+    setUnassociated(false);
+    setNature("");
+    setOriginFilter("");
     setEquipment("");
     setCategory("");
     setFrom("");
@@ -181,6 +198,30 @@ function StockContent({ mode }: { mode: Mode }) {
         <Link className="button quiet" href="/settings#dates">
           Dates et alertes
         </Link>
+      </div>
+      <div className="toolbar">
+        <label>
+          Nature
+          <select value={nature} onChange={(e) => setNature(e.target.value)}>
+            <option value="">Toutes les natures</option>
+            <option value="food">Aliment</option>
+            <option value="beverage">Boisson</option>
+            <option value="wine">Vin</option>
+            <option value="unknown">Non précisée</option>
+          </select>
+        </label>
+        <label>
+          Origine
+          <select
+            value={originFilter}
+            onChange={(e) => setOriginFilter(e.target.value)}
+          >
+            <option value="">Toutes les origines</option>
+            <option value="bought">Acheté</option>
+            <option value="homemade">Fait maison</option>
+            <option value="unknown">Non précisée</option>
+          </select>
+        </label>
       </div>
       <div className="toolbar">
         <label className="search">
@@ -300,6 +341,14 @@ function StockContent({ mode }: { mode: Mode }) {
         </Link>
         <Link href="/history">Historique</Link>
       </div>
+      <label className="checkbox">
+        <input
+          type="checkbox"
+          checked={unassociated}
+          onChange={(e) => setUnassociated(e.target.checked)}
+        />
+        Articles sans ingrédient associé
+      </label>
       <div className="stock-list">
         {visible.map((item) => {
           const eq = stock.equipments.find((e) => e.id === item.congelo_id),
@@ -338,11 +387,25 @@ function StockContent({ mode }: { mode: Mode }) {
               {!alert && (
                 <p className="item-date">
                   {item.date_peremption
-                    ? `${item.date_kind === "estimated" ? "Date indicative" : "Date limite"} : ${formatDate(item.date_peremption)}`
+                    ? `${dateLabelFor(item)} : ${formatDate(item.date_peremption)}`
                     : item.date_entree
                       ? `Entré le ${formatDate(item.date_entree)}`
                       : "Date non renseignée"}
                 </p>
+              )}
+              {item.ingredient_name && (
+                <p className="item-notes">
+                  Ingrédient : {item.ingredient_name}
+                </p>
+              )}
+              {contentTotal(item) && (
+                <p className="item-notes">
+                  {item.content_quantity} {item.content_unit} par {item.unite} ·{" "}
+                  {contentTotal(item)}
+                </p>
+              )}
+              {item.date_role && item.date_role !== "unknown" && (
+                <p className="item-notes">{dateLabelFor(item)}</p>
               )}
               {item.notes && <p className="item-notes">{item.notes}</p>}
               {mode === "inventory" ? (
@@ -556,6 +619,19 @@ function StockDialog({
     ),
     [error, setError] = useState(""),
     [another, setAnother] = useState(false);
+  const [ingredient, setIngredient] = useState(original?.ingredient_id ?? "");
+  const [content, setContent] = useState(
+    original?.content_quantity == null ? "" : String(original.content_quantity),
+  );
+  const [contentUnit, setContentUnit] = useState(original?.content_unit ?? "g");
+  const [productType, setProductType] = useState(original?.product_type ?? "");
+  const [preparationOrigin, setPreparationOrigin] = useState(
+    original?.preparation_origin ?? "",
+  );
+  const [fabrication, setFabrication] = useState(
+    original?.date_fabrication ?? "",
+  );
+  const [dateRole, setDateRole] = useState(original?.date_role ?? "unknown");
   const [useEstimate, setUseEstimate] = useState(choice.action === "add");
   const [dateKind, setDateKind] = useState(original?.date_kind ?? "declared");
   const estimate =
@@ -632,6 +708,17 @@ function StockDialog({
             ? "estimated"
             : "declared",
         notes: notes || null,
+        date_fabrication: fabrication || null,
+        ingredient_id: ingredient || null,
+        content_quantity: content === "" ? null : Number(content),
+        content_unit: content === "" ? null : contentUnit,
+        product_type: productType || null,
+        preparation_origin: preparationOrigin || null,
+        date_role: !effectiveExpiry
+          ? "unknown"
+          : !expiry
+            ? "indicative"
+            : dateRole,
         version: original?.version,
       });
     if (choice.action === "add" || choice.action === "transfer")
@@ -679,6 +766,63 @@ function StockDialog({
                 ))}
               </datalist>
             </label>
+            <details className="more">
+              <summary>Ingrédient et contenu du contenant</summary>
+              <label>
+                Ingrédient officiel (facultatif)
+                <select
+                  value={ingredient}
+                  onChange={(e) => setIngredient(e.target.value)}
+                >
+                  <option value="">Non associé</option>
+                  {ingredient &&
+                    !(stock.ingredients ?? []).some(
+                      (i) => i.id === ingredient,
+                    ) && (
+                      <option value={ingredient}>
+                        {original?.ingredient_name ?? "Association existante"}
+                      </option>
+                    )}
+                  {(stock.ingredients ?? []).map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="muted">
+                Le nom affiché du produit reste libre. Importez le référentiel
+                Mealio dans Réglages pour associer les articles.
+              </p>
+              <label>
+                Contenu par unité de stock (facultatif)
+                <input
+                  type="number"
+                  min="0.000001"
+                  step="any"
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder="Ex. 250 par pot"
+                />
+              </label>
+              <label>
+                Unité du contenu
+                <select
+                  value={contentUnit}
+                  onChange={(e) =>
+                    setContentUnit(e.target.value as typeof contentUnit)
+                  }
+                >
+                  <option value="g">g</option>
+                  <option value="mL">mL</option>
+                  <option value="pièce(s)">pièce(s)</option>
+                </select>
+              </label>
+              <p className="muted">
+                Aucun suivi d’ouverture. Sans contenu renseigné, la quantité et
+                l’unité actuelles restent utilisées.
+              </p>
+            </details>
             <div className="form-row">
               <label>
                 Quantité
@@ -775,6 +919,61 @@ function StockDialog({
                 cet équipement, depuis la date d’entrée.
               </p>
             )}
+            <details className="more">
+              <summary>Nature du produit et rôle de la date</summary>
+              <label>
+                Nature
+                <select
+                  value={productType}
+                  onChange={(e) =>
+                    setProductType(e.target.value as typeof productType)
+                  }
+                >
+                  <option value="">À préciser</option>
+                  <option value="food">Aliment</option>
+                  <option value="beverage">Boisson</option>
+                  <option value="wine">Vin</option>
+                </select>
+              </label>
+              <label>
+                Date de fabrication
+                <input
+                  type="date"
+                  value={fabrication}
+                  onChange={(e) => setFabrication(e.target.value)}
+                />
+              </label>
+              <label>
+                Origine
+                <select
+                  value={preparationOrigin}
+                  onChange={(e) =>
+                    setPreparationOrigin(
+                      e.target.value as typeof preparationOrigin,
+                    )
+                  }
+                >
+                  <option value="">À préciser</option>
+                  <option value="bought">Acheté</option>
+                  <option value="homemade">Fait maison</option>
+                </select>
+              </label>
+              <label>
+                Rôle de la date saisie
+                <select
+                  value={dateRole}
+                  onChange={(e) =>
+                    setDateRole(e.target.value as typeof dateRole)
+                  }
+                >
+                  <option value="unknown">À préciser</option>
+                  <option value="dlc">DLC</option>
+                  <option value="ddm">DDM</option>
+                  <option value="apogee">Apogée souhaitée</option>
+                  <option value="indicative">Date indicative</option>
+                </select>
+              </label>
+            </details>
             <details className="more">
               <summary>Plus de détails</summary>
               <label>

@@ -17,6 +17,20 @@ export interface Item {
   date_peremption: string | null;
   date_kind?: "declared" | "estimated";
   notes: string | null;
+  millesime?: string | null;
+  domaine?: string | null;
+  format?: string | null;
+  date_fabrication?: string | null;
+  preparation_id?: string | null;
+  recipe_id?: string | null;
+  portions_per_unit?: number | null;
+  ingredient_id?: string | null;
+  ingredient_name?: string | null;
+  content_quantity?: number | null;
+  content_unit?: "g" | "mL" | "pièce(s)" | null;
+  product_type?: "food" | "beverage" | "wine" | null;
+  preparation_origin?: "bought" | "homemade" | null;
+  date_role?: "unknown" | "dlc" | "ddm" | "apogee" | "indicative";
   version: number;
 }
 export interface Category {
@@ -40,6 +54,7 @@ export interface Settings {
   dlc_warning_days: number;
 }
 export interface Bootstrap {
+  ingredients?: { id: string; name: string }[];
   archive_enabled: boolean;
   username: string;
   items: Item[];

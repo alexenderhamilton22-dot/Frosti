@@ -143,6 +143,20 @@ function Content() {
           Dates et délais
         </a>
       </div>
+      <section className="panel">
+        <h2>Référentiel des ingrédients Mealio</h2>
+        <p className="muted">
+          {stock.ingredients?.length ?? 0} ingrédients disponibles pour associer
+          les lots. Le référentiel reste géré dans Mealio.
+        </p>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => void change("/api/ingredients", {})}
+        >
+          Importer / actualiser les ingrédients
+        </button>
+      </section>
       <section className="panel" id="equipment">
         <div className="inline-actions">
           <h2>Mes équipements</h2>

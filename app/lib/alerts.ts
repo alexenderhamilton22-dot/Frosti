@@ -23,8 +23,7 @@ export function alertFor(
 ) {
   if (item.qte <= 0) return null;
   if (item.date_peremption) {
-    const dateLabel =
-      item.date_kind === "estimated" ? "Date indicative" : "Date limite";
+    const dateLabel = dateLabelFor(item);
     const days = dayDifference(item.date_peremption, today);
     if (!Number.isFinite(days)) return null;
     if (days < 0)
@@ -100,4 +99,29 @@ export function parisDayStart(day: string) {
       (Number(match[2]) * 60 + Number(match[3] ?? 0))
     : 0;
   return new Date(utc.valueOf() - minutes * 60000).toISOString();
+}
+
+export function dateLabelFor(item: Item) {
+  if (item.date_kind === "estimated" || item.date_role === "indicative")
+    return "Date indicative";
+  return (
+    (
+      {
+        dlc: "DLC",
+        ddm: "DDM",
+        apogee: "Apogée",
+        unknown: "Date de suivi",
+      } as Record<string, string>
+    )[item.date_role ?? "unknown"] ?? "Date de suivi"
+  );
+}
+export function contentTotal(item: Item) {
+  return item.content_quantity && item.content_unit
+    ? new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 6 }).format(
+        item.qte * item.content_quantity,
+      ) +
+        " " +
+        item.content_unit +
+        " au total"
+    : null;
 }
